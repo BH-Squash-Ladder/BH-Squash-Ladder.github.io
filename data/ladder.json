@@ -1,0 +1,7 @@
+{
+  "players": [
+    { "name": "Alice Smith" },
+    { "name": "Bob Jones" },
+    { "name": "Chris Brown" }
+  ]
+}
