@@ -1,462 +1,88 @@
 <!doctype html>
-<html lang="en" class="dark">
+<html class="dark">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Squash Ladder — Shared (Dark)</title>
-  <meta name="description" content="Shared squash ladder with GitHub-backed storage (dark mode)" />
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Squash Ladder</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
-  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
 </head>
-<body class="bg-slate-900 text-slate-100 antialiased">
-  <div id="root" class="min-h-screen p-6"></div>
+<body class="bg-slate-900 text-slate-100 p-6">
+
+<div class="max-w-5xl mx-auto grid md:grid-cols-3 gap-6">
+
+  <!-- LADDER -->
+  <div class="md:col-span-2 bg-slate-800 rounded p-4">
+    <h1 class="text-2xl font-bold mb-4">Squash Ladder</h1>
+    <ol id="ladder" class="space-y-2 text-lg"></ol>
+  </div>
+
+  <!-- RIGHT SIDEBAR -->
+  <div class="space-y-4">
+
+    <button id="requestChangeBtn" class="w-full bg-indigo-600 hover:bg-indigo-500 py-2 rounded">
+      Request Ladder Change
+    </button>
+
+    <button id="requestNewPlayerBtn" class="w-full bg-green-600 hover:bg-green-500 py-2 rounded">
+      Request New Player
+    </button>
+
+  </div>
+</div>
+
+<!-- NEW PLAYER MODAL -->
+<div id="newPlayerModal" class="fixed inset-0 bg-black/60 hidden justify-center items-center">
+  <div class="bg-slate-800 p-6 rounded space-y-4 max-w-sm w-full">
+    <h2 class="text-xl font-semibold">Request New Player</h2>
+    <input id="firstname" placeholder="First name" class="w-full px-2 py-1 bg-slate-900 border border-slate-600 rounded">
+    <input id="lastname" placeholder="Last name" class="w-full px-2 py-1 bg-slate-900 border border-slate-600 rounded">
+    <div class="flex justify-end gap-2">
+      <button onclick="closeNewPlayerModal()" class="px-3 py-1 border rounded">Cancel</button>
+      <button onclick="submitNewPlayer()" class="px-3 py-1 bg-green-600 rounded">Submit</button>
+    </div>
+  </div>
+</div>
 
 <script>
-const { useState, useEffect, useRef } = React;
+// ---- configure once ----
+const OWNER = "YOUR_GITHUB_USERNAME";
+const REPO = "YOUR_REPO_NAME";
+const DATA_PATH = "data/ladder.json"; // same as action uses
 
-// ---------- Config ----------
-const DEFAULT_PATH = 'data/ladder.json';
-
-// ---------- Helpers ----------
-function mkid(prefix='id') {
-  return prefix + '_' + Date.now().toString(36) + Math.random().toString(36).slice(2,7);
-}
-function nowISO(){ return new Date().toISOString(); }
-function safeParse(s, fallback){ try{ return JSON.parse(s); }catch(e){ return fallback; } }
-
-// ---------- Sample seed ----------
-const SAMPLE_PLAYERS = [
-  { id: 'p1', name: 'Alice' },
-  { id: 'p2', name: 'Ben' },
-  { id: 'p3', name: 'Carl' },
-  { id: 'p4', name: 'Diane' },
-  { id: 'p5', name: 'Eve' },
-];
-function blankData(){
-  return {
-    players: SAMPLE_PLAYERS,
-    requests: [],
-    adminPin: '1234',
-    meta: { createdAt: nowISO() }
-  };
-}
-
-// ---------- GitHub helpers ----------
-async function ghGetFile(owner, repo, path, token){
-  const url = `https://api.github.com/repos/${owner}/${repo}/contents/${encodeURIComponent(path)}`;
-  const headers = { Accept: 'application/vnd.github.v3+json' };
-  if(token) headers.Authorization = `token ${token}`;
-  const res = await fetch(url, { headers });
-  if(res.status === 404) return { notFound: true };
-  if(!res.ok){
-    const txt = await res.text(); throw new Error(`GET ${res.status}: ${txt}`);
-  }
-  const j = await res.json();
-  const content = atob(j.content.replace(/\n/g,'')); // base64
-  return { content, sha: j.sha, raw: j, json: JSON.parse(content) };
-}
-
-async function ghPutFile(owner, repo, path, contentStr, message, sha, token){
-  const url = `https://api.github.com/repos/${owner}/${repo}/contents/${encodeURIComponent(path)}`;
-  const body = {
-    message: message || `Update ${path}`,
-    content: btoa(unescape(encodeURIComponent(contentStr))),
-    committer: { name: "Squash Ladder Bot", email: "noreply@example.com" }
-  };
-  if(sha) body.sha = sha;
-  const headers = { Accept: 'application/vnd.github.v3+json', 'Content-Type':'application/json' };
-  if(token) headers.Authorization = `token ${token}`;
-  const res = await fetch(url, { method: 'PUT', headers, body: JSON.stringify(body) });
-  if(!res.ok){ const txt = await res.text(); throw new Error(`PUT ${res.status}: ${txt}`); }
-  return await res.json();
-}
-
-// ---------- UI Component ----------
-function App(){
-  // Backend connection (sessionStorage)
-  const [owner, setOwner] = useState(sessionStorage.getItem('gh_owner') || '');
-  const [repo, setRepo] = useState(sessionStorage.getItem('gh_repo') || '');
-  const [path, setPath] = useState(sessionStorage.getItem('gh_path') || DEFAULT_PATH);
-  const [token, setToken] = useState(sessionStorage.getItem('gh_token') || '');
-
-  // App data
-  const [data, setData] = useState(blankData());
-  const [sha, setSha] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState('');
-  const [isAdminMode, setIsAdminMode] = useState(false);
-  const [adminPinInput, setAdminPinInput] = useState('');
-  const [filter, setFilter] = useState('');
-  const [showRequestModal, setShowRequestModal] = useState(false);
-  const [form, setForm] = useState({
-    challengerId: '',
-    targetId: '',
-    challengerScore: 3,
-    targetScore: 2,
-    notes: ''
+// ---- load ladder (read only) ----
+async function loadLadder(){
+  const res = await fetch(`https://raw.githubusercontent.com/${OWNER}/${REPO}/main/${DATA_PATH}?t=${Date.now()}`);
+  const data = await res.json();
+  const ladder = document.getElementById("ladder");
+  ladder.innerHTML = "";
+  data.players.forEach((p,i)=>{
+    ladder.innerHTML += `<li class="bg-slate-900 p-3 rounded border border-slate-700">
+      <span class="font-bold mr-3">#${i+1}</span>${p.name}
+    </li>`;
   });
-
-  // Load file from GitHub
-  async function loadFromRepo(){
-    if(!owner || !repo || !path) { setMessage('Set backend repo first'); return; }
-    try{
-      setLoading(true); setMessage('Loading from GitHub...');
-      const res = await ghGetFile(owner, repo, path, token || undefined);
-      if(res.notFound){
-        setMessage('Data file not found in repo (you can Init ladder).');
-        setData(blankData()); setSha(null);
-      } else {
-        setData(res.json); setSha(res.sha); setMessage('Loaded ladder.json');
-      }
-    }catch(e){
-      setMessage('Error: ' + e.message);
-      setData(blankData()); setSha(null);
-    }finally{ setLoading(false); }
-  }
-
-  useEffect(()=>{ // save connection settings to sessionStorage
-    sessionStorage.setItem('gh_owner', owner || '');
-    sessionStorage.setItem('gh_repo', repo || '');
-    sessionStorage.setItem('gh_path', path || DEFAULT_PATH);
-  }, [owner, repo, path]);
-
-  useEffect(()=>{ if(token) sessionStorage.setItem('gh_token', token); else sessionStorage.removeItem('gh_token'); }, [token]);
-
-  // Init or reset file in repo
-  async function initRepoFile(){
-    if(!owner || !repo) { setMessage('Set owner and repo first'); return; }
-    try{
-      setLoading(true); setMessage('Initializing ladder file in repo...');
-      const contentStr = JSON.stringify(blankData(), null, 2);
-      const res = await ghPutFile(owner, repo, path, contentStr, 'Init ladder.json', null, token || undefined);
-      setSha(res.content.sha);
-      setData(JSON.parse(contentStr));
-      setMessage('Initialized ladder.json');
-    } catch(e){
-      setMessage('Error: ' + e.message);
-    } finally { setLoading(false); }
-  }
-
-  // Save current data to repo (write)
-  async function saveToRepo(msg){
-    if(!owner || !repo) { setMessage('Set backend first'); return; }
-    try{
-      setLoading(true); setMessage('Saving to GitHub...');
-      const contentStr = JSON.stringify(data, null, 2);
-      const res = await ghPutFile(owner, repo, path, contentStr, msg || 'Update ladder', sha || undefined, token || undefined);
-      setSha(res.content.sha);
-      setMessage('Saved to GitHub');
-    } catch(e){
-      setMessage('Error: ' + e.message);
-    } finally { setLoading(false); }
-  }
-
-  // UI helpers
-  function findIndexById(id){ return data.players.findIndex(p => p.id === id); }
-  function getName(id){ return data.players.find(p => p.id === id)?.name || id; }
-
-  // Add player (admin only)
-  function addPlayer(name){
-    if(!name) return;
-    const id = mkid('p');
-    setData(d => ({ ...d, players: [ ...d.players, { id, name } ] }));
-    setMessage(`Added ${name}`);
-  }
-  // Remove player (admin only)
-  function removePlayer(id){
-    if(!confirm('Remove player from ladder?')) return;
-    setData(d => ({ ...d, players: d.players.filter(p => p.id !== id), requests: d.requests.filter(r => r.challenger !== id && r.target !== id) }));
-  }
-
-  // Open request modal and set challenger default
-  function openRequestModalFor(challengerId){
-    const idx = findIndexById(challengerId);
-    setForm({
-      challengerId,
-      targetId: chooseDefaultTarget(challengerId) || '',
-      challengerScore: 3,
-      targetScore: 2,
-      notes: ''
-    });
-    setShowRequestModal(true);
-  }
-
-  // Given challenger, return allowed targets: players within ±3 positions excluding challenger
-  function allowedTargets(challengerId){
-    const idx = findIndexById(challengerId);
-    if(idx === -1) return [];
-    const min = Math.max(0, idx - 3);
-    const max = Math.min(data.players.length - 1, idx + 3);
-    // exclude challenger
-    return data.players.slice(min, max+1).filter(p => p.id !== challengerId);
-  }
-  function chooseDefaultTarget(challengerId){
-    const list = allowedTargets(challengerId);
-    return list[0]?.id || '';
-  }
-
-  // Submit a request
-  function submitRequest(e){
-    e && e.preventDefault();
-    const { challengerId, targetId, challengerScore, targetScore, notes } = form;
-    if(!challengerId || !targetId){ setMessage('Select challenger and target'); return; }
-    // validate target in allowedTargets
-    const allowed = allowedTargets(challengerId).map(p=>p.id);
-    if(!allowed.includes(targetId)) { setMessage('Target not allowed — must be within 3 positions of challenger'); return; }
-    // Validate best-of-5 final score: challengerScore must be 3 and targetScore must be 0..2 and challengerScore>targetScore
-    const c = Number(challengerScore), t = Number(targetScore);
-    const validFinal = (c === 3 && (t === 0 || t === 1 || t === 2) && c > t);
-    const req = {
-      id: mkid('r'),
-      challenger: challengerId,
-      target: targetId,
-      challengerScore: c,
-      targetScore: t,
-      notes: notes || '',
-      createdAt: nowISO(),
-      status: validFinal ? 'pending' : 'rejected',
-      decisionReason: validFinal ? null : 'Challenger did not record a winning final score (auto-rejected per rule A).'
-    };
-    setData(d => ({ ...d, requests: [req, ...(d.requests||[])] }));
-    setShowRequestModal(false);
-    setMessage(validFinal ? 'Request submitted (pending admin approval)' : 'Request recorded and auto-rejected (challenger did not win)');
-  }
-
-  // Admin login by PIN
-  function toggleAdminMode(){
-    if(isAdminMode){
-      setIsAdminMode(false); setAdminPinInput('');
-      return;
-    }
-    if(adminPinInput === data.adminPin){
-      setIsAdminMode(true); setAdminPinInput('');
-      setMessage('Admin mode enabled');
-    } else {
-      alert('Wrong admin PIN');
-    }
-  }
-
-  // Admin: update admin pin and save to repo
-  function updateAdminPin(newPin){
-    setData(d => ({ ...d, adminPin: newPin }));
-    saveToRepo('Update admin PIN');
-  }
-
-  // Approve a request (admin)
-  async function approveRequest(id){
-    const req = data.requests.find(r => r.id === id);
-    if(!req) return;
-    if(req.status !== 'pending'){ setMessage('Request not pending'); return; }
-    // Re-validate: ensure challenger still exists and target exists
-    const challengerIndex = findIndexById(req.challenger);
-    const targetIndex = findIndexById(req.target);
-    if(challengerIndex === -1 || targetIndex === -1){
-      setData(d => ({ ...d, requests: d.requests.map(r => r.id===id ? { ...r, status:'rejected', decisionAt: nowISO(), decisionReason:'Player not found' } : r) }));
-      setMessage('Player not found — request rejected');
-      return;
-    }
-    // Insert challenger above target (i.e., at targetIndex position). But if challengerIndex < targetIndex, removal shifts indices => handle carefully
-    setData(d => {
-      const players = d.players.slice();
-      // remove challenger
-      const [challenger] = players.splice(challengerIndex,1);
-      // find new insert position for target (note if challenger was before target originally, targetIndex decreases by 1 after removal)
-      let insertAt = targetIndex;
-      if(challengerIndex < targetIndex) insertAt = targetIndex - 1;
-      insertAt = Math.max(0, Math.min(players.length, insertAt)); // clamp
-      players.splice(insertAt, 0, challenger);
-      // update requests: mark this one approved
-      const requests = d.requests.map(r => r.id===id ? ({ ...r, status:'approved', decisionAt: nowISO() }) : r);
-      return { ...d, players, requests };
-    });
-    // After local update, save to repo
-    setMessage('Approving — saving to repo...');
-    try{
-      await saveToRepo(`Approve request ${id}`);
-    }catch(e){
-      setMessage('Error saving approval: ' + e.message);
-    }
-  }
-
-  // Reject a request (admin)
-  async function rejectRequest(id, reason='Rejected by admin'){
-    setData(d => ({ ...d, requests: d.requests.map(r => r.id===id ? ({ ...r, status:'rejected', decisionAt: nowISO(), decisionReason: reason }) : r) }));
-    try{ await saveToRepo(`Reject request ${id}`); }catch(e){ setMessage('Error: ' + e.message); }
-  }
-
-  // Save current in-memory data to repo via explicit button
-  async function manualSave(){
-    await saveToRepo('Manual save');
-  }
-
-  // On mount: try to load if owner & repo provided
-  useEffect(()=>{ if(owner && repo) loadFromRepo(); }, []);
-
-  // Derived filtered players
-  const visiblePlayers = data.players.filter(p => p.name.toLowerCase().includes(filter.toLowerCase()));
-
-  // UI render
-  return React.createElement('div', { className:'max-w-6xl mx-auto' },
-    // Header
-    React.createElement('header', { className:'flex items-start justify-between gap-4 mb-6' },
-      React.createElement('div', null,
-        React.createElement('h1', { className:'text-3xl font-bold' }, 'Squash Ladder — Dark'),
-        React.createElement('p', { className:'text-sm text-slate-400' }, 'Shared ladder using GitHub as storage. Admin PIN required to approve requests.')
-      ),
-      React.createElement('div', { className:'bg-slate-800 p-3 rounded space-y-2 text-sm' },
-        React.createElement('div', null, 'Backend (GitHub repo)'),
-        React.createElement('div', { className:'flex gap-2' },
-          React.createElement('input', { placeholder: 'owner', value: owner, onChange: e=>setOwner(e.target.value), className:'px-2 py-1 bg-slate-900 border border-slate-700 rounded w-24' }),
-          React.createElement('input', { placeholder: 'repo', value: repo, onChange: e=>setRepo(e.target.value), className:'px-2 py-1 bg-slate-900 border border-slate-700 rounded w-28' }),
-          React.createElement('input', { placeholder: 'path', value: path, onChange: e=>setPath(e.target.value), className:'px-2 py-1 bg-slate-900 border border-slate-700 rounded w-36' }),
-        ),
-        React.createElement('div', { className:'flex gap-2' },
-          React.createElement('input', { placeholder: 'PAT (write)', value: token, onChange: e=>setToken(e.target.value), className:'px-2 py-1 bg-slate-900 border border-slate-700 rounded w-64' }),
-          React.createElement('button', { className:'px-3 py-1 rounded bg-indigo-600 text-white', onClick: loadFromRepo }, 'Load'),
-          React.createElement('button', { className:'px-3 py-1 rounded bg-green-600 text-white', onClick: initRepoFile }, 'Init ladder'),
-          React.createElement('button', { className:'px-3 py-1 rounded bg-amber-500 text-black', onClick: manualSave }, 'Save')
-        ),
-        React.createElement('div', null,
-          React.createElement('span', { className:'text-xs text-slate-400' }, loading ? 'Busy...' : message)
-        )
-      )
-    ),
-
-    // Main grid
-    React.createElement('main', { className:'grid md:grid-cols-2 gap-6' },
-
-      // Ladder column
-      React.createElement('section', { className:'bg-slate-800 rounded p-4' },
-        React.createElement('div', { className:'flex items-center justify-between mb-3' },
-          React.createElement('h2', { className:'text-xl font-semibold' }, 'Current Ladder'),
-          React.createElement('div', { className:'flex items-center gap-2' },
-            React.createElement('input', { placeholder:'search', value: filter, onChange: e=>setFilter(e.target.value), className:'px-2 py-1 bg-slate-900 border border-slate-700 rounded' }),
-            React.createElement('button', { className:'px-3 py-1 bg-indigo-600 rounded text-white', onClick: ()=>{ setForm({ challengerId: data.players[0]?.id||'', targetId: data.players[1]?.id||'', challengerScore:3, targetScore:2, notes:''}); setShowRequestModal(true);} }, 'Request Change')
-          )
-        ),
-        React.createElement('ol', { className:'space-y-2' },
-          visiblePlayers.map((p,i) =>
-            React.createElement('li', { key: p.id, className:'flex items-center justify-between border rounded p-3 bg-slate-900' },
-              React.createElement('div', { className:'flex items-center gap-3' },
-                React.createElement('div', { className:'w-10 text-center font-bold' }, '#'+(i+1)),
-                React.createElement('div', null,
-                  React.createElement('div', { className:'font-medium' }, p.name),
-                  React.createElement('div', { className:'text-xs text-slate-400' }, p.id)
-                )
-              ),
-              React.createElement('div', { className:'flex items-center gap-2' },
-                React.createElement('button', { className:'px-2 py-1 border rounded text-sm', onClick: ()=>{ navigator.clipboard?.writeText(p.id); setMessage('Player ID copied'); } }, 'Copy ID'),
-                React.createElement('button', { className:'px-2 py-1 border rounded text-sm', onClick: ()=>openRequestModalFor(p.id) }, 'Request'),
-                isAdminMode && React.createElement('button', { className:'px-2 py-1 bg-rose-600 rounded text-white text-sm', onClick: ()=>removePlayer(p.id) }, 'Remove')
-              )
-            )
-          )
-        ),
-        React.createElement(AddPlayerInline, { onAdd: addPlayer })
-      ),
-
-      // Requests column
-      React.createElement('section', { className:'bg-slate-800 rounded p-4' },
-        React.createElement('div', { className:'flex items-center justify-between mb-3' },
-          React.createElement('h2', { className:'text-xl font-semibold' }, 'Requests'),
-          React.createElement('div', { className:'flex items-center gap-2' },
-            React.createElement('input', { type:'password', placeholder:'admin PIN', value: adminPinInput, onChange: e=>setAdminPinInput(e.target.value), className:'px-2 py-1 bg-slate-900 border border-slate-700 rounded' }),
-            React.createElement('button', { className:`px-3 py-1 rounded ${isAdminMode? 'bg-red-500':'bg-slate-600'}`, onClick: toggleAdminMode }, isAdminMode ? 'Exit Admin' : 'Enter Admin')
-          )
-        ),
-
-        React.createElement('div', { className:'space-y-3' },
-          (data.requests || []).length === 0 && React.createElement('div', { className:'text-slate-400' }, 'No requests yet.'),
-          (data.requests || []).map(r =>
-            React.createElement('div', { key: r.id, className:'border rounded p-3 bg-slate-900' },
-              React.createElement('div', { className:'flex items-start justify-between' },
-                React.createElement('div', null,
-                  React.createElement('div', null,
-                    React.createElement('strong', null, getName(r.challenger)), ' requests to move above ', React.createElement('strong', null, getName(r.target))
-                  ),
-                  React.createElement('div', { className:'text-xs text-slate-400' }, new Date(r.createdAt).toLocaleString(), ' — status: ', React.createElement('em', null, r.status)),
-                  React.createElement('div', { className:'mt-2 text-sm' }, `Score: ${getName(r.challenger)} ${r.challengerScore} – ${r.targetScore} ${getName(r.target)}`),
-                  r.notes && React.createElement('div', { className:'mt-1 text-sm text-slate-300' }, 'Notes: ', r.notes),
-                  r.decisionReason && React.createElement('div', { className:'mt-1 text-xs text-rose-400' }, 'Reason: ', r.decisionReason)
-                ),
-                React.createElement('div', { className:'flex flex-col gap-2' },
-                  r.status === 'pending' && isAdminMode && React.createElement(React.Fragment, null,
-                    React.createElement('button', { className:'px-3 py-1 rounded bg-green-600 text-white', onClick: ()=>approveRequest(r.id) }, 'Approve'),
-                    React.createElement('button', { className:'px-3 py-1 rounded bg-amber-400 text-black', onClick: ()=>rejectRequest(r.id, 'Rejected by admin') }, 'Reject')
-                  ),
-                  r.status !== 'pending' && React.createElement('div', { className:'text-xs text-slate-400' }, 'Decided: ', r.decisionAt ? new Date(r.decisionAt).toLocaleString() : '-')
-                )
-              )
-            )
-          )
-        ),
-
-        React.createElement('div', { className:'mt-4' },
-          isAdminMode && React.createElement('div', { className:'bg-slate-900 p-3 rounded' },
-            React.createElement('h3', { className:'font-semibold mb-2' }, 'Admin Controls'),
-            React.createElement('div', { className:'flex gap-2 mb-2' },
-              React.createElement('input', { placeholder:'New admin PIN', className:'px-2 py-1 bg-slate-800 border border-slate-700 rounded', onKeyDown: e=>{ if(e.key==='Enter'){ updateAdminPin(e.target.value); e.target.value=''; } } }),
-              React.createElement('button', { className:'px-3 py-1 rounded bg-indigo-600 text-white', onClick: ()=>{ const p = prompt('Set new admin PIN'); if(p) updateAdminPin(p); } }, 'Set PIN')
-            ),
-            React.createElement('div', { className:'text-xs text-slate-400' }, 'Note: Changes save to the repo on approve/reject actions or when you click Save.')
-          )
-        )
-      )
-    ),
-
-    // Request Modal
-    showRequestModal && React.createElement('div', { className:'fixed inset-0 bg-black/50 flex items-center justify-center' },
-      React.createElement('form', { onSubmit: submitRequest, className:'bg-slate-800 p-6 rounded w-full max-w-lg' },
-        React.createElement('h3', { className:'text-lg font-semibold mb-3' }, 'New Ladder Change Request'),
-        React.createElement('div', { className:'grid gap-3' },
-          React.createElement('label', null,
-            React.createElement('div', { className:'text-sm text-slate-300' }, 'Challenger'),
-            React.createElement('select', { className:'w-full px-2 py-1 mt-1 bg-slate-900 border border-slate-700 rounded', value: form.challengerId, onChange: e=>setForm({...form, challengerId: e.target.value, targetId: chooseDefaultTarget(e.target.value) }) },
-              data.players.map(p=>React.createElement('option', { key:p.id, value:p.id }, p.name))
-            )
-          ),
-          React.createElement('label', null,
-            React.createElement('div', { className:'text-sm text-slate-300' }, 'Target (must be within ±3 positions of challenger)'),
-            React.createElement('select', { className:'w-full px-2 py-1 mt-1 bg-slate-900 border border-slate-700 rounded', value: form.targetId, onChange: e=>setForm({...form, targetId: e.target.value}) },
-              (allowedTargets(form.challengerId).map(p=>React.createElement('option', { key:p.id, value:p.id }, p.name)))
-            )
-          ),
-          React.createElement('div', null,
-            React.createElement('div', { className:'text-sm text-slate-300 mb-1' }, 'Final Match Score (best of 5, enter final sets won)'),
-            React.createElement('div', { className:'flex gap-2 items-center' },
-              React.createElement('input', { type:'number', min:0, max:3, value: form.challengerScore, onChange: e=>setForm({...form, challengerScore: Number(e.target.value)}) , className:'w-20 px-2 py-1 bg-slate-900 border border-slate-700 rounded' }),
-              React.createElement('span', { className:'text-slate-300' }, '–'),
-              React.createElement('input', { type:'number', min:0, max:2, value: form.targetScore, onChange: e=>setForm({...form, targetScore: Number(e.target.value)}) , className:'w-20 px-2 py-1 bg-slate-900 border border-slate-700 rounded' })
-            ),
-            React.createElement('div', { className:'text-xs text-slate-400 mt-1' }, 'Valid finals: 3–0, 3–1, 3–2. Challenger must be winner (3). Otherwise request will be auto-rejected per club rule A.')
-          ),
-          React.createElement('label', null,
-            React.createElement('div', { className:'text-sm text-slate-300' }, 'Notes (optional)'),
-            React.createElement('textarea', { className:'w-full px-2 py-1 mt-1 bg-slate-900 border border-slate-700 rounded', rows:3, value: form.notes, onChange: e=>setForm({...form, notes: e.target.value}) })
-          ),
-          React.createElement('div', { className:'flex justify-end gap-2' },
-            React.createElement('button', { type:'button', className:'px-3 py-1 border rounded', onClick: ()=>setShowRequestModal(false) }, 'Cancel'),
-            React.createElement('button', { type:'submit', className:'px-3 py-1 bg-indigo-600 rounded text-white' }, 'Send Request')
-          )
-        )
-      )
-    )
-  );
 }
+loadLadder();
 
-// Inline add player small component
-function AddPlayerInline({ onAdd }){
-  const [name, setName] = useState('');
-  return React.createElement('form', { onSubmit: e=>{ e.preventDefault(); if(!name.trim()) return; onAdd(name.trim()); setName(''); }, className:'mt-4 flex gap-2' },
-    React.createElement('input', { placeholder:'New player name', value:name, onChange:e=>setName(e.target.value), className:'flex-1 px-2 py-1 bg-slate-900 border border-slate-700 rounded' }),
-    React.createElement('button', { className:'px-3 py-1 bg-green-600 rounded text-white', type:'submit' }, 'Add')
-  );
+// ---- Request Change → open issue form directly ----
+document.getElementById("requestChangeBtn").onclick = () => {
+  window.open(`https://github.com/${OWNER}/${REPO}/issues/new?labels=challenge&title=Challenge%20Result&body=Please%20enter%20final%20score%20in%20form:%0A%0AChallenger:%20NAME%0ATarget:%20NAME%0AScore:%20e.g.%203-2%0A`, "_blank");
+};
+
+// ---- New Player Modal ----
+document.getElementById("requestNewPlayerBtn").onclick = () => {
+  document.getElementById("newPlayerModal").classList.remove("hidden");
+};
+function closeNewPlayerModal(){
+  document.getElementById("newPlayerModal").classList.add("hidden");
 }
-
-// Render
-ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
-
+function submitNewPlayer(){
+  const fn = firstname.value.trim();
+  const ln = lastname.value.trim();
+  if(!fn || !ln) return alert("Enter name & surname");
+  closeNewPlayerModal();
+  window.open(`https://github.com/${OWNER}/${REPO}/issues/new?labels=new-player&title=Add%20Player:%20${fn}%20${ln}&body=Please%20approve%20this%20new%20player.`, "_blank");
+}
 </script>
+
 </body>
 </html>
