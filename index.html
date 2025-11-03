@@ -29,6 +29,10 @@
     <button id="adminApproveBtn" class="w-full bg-yellow-600 hover:bg-yellow-500 py-2 rounded">
       Admin: Approve Requests
     </button>
+
+    <button id="downloadJSONBtn" class="w-full bg-gray-600 hover:bg-gray-500 py-2 rounded">
+      Download Updated JSON
+    </button>
   </div>
 </div>
 
@@ -60,7 +64,7 @@
 </div>
 
 <script>
-// LADDER DATA
+// --- LADDER DATA ---
 let ladderData = {
   players: [
     { name: "Alice Smith" },
@@ -69,11 +73,11 @@ let ladderData = {
   ]
 };
 
-// PENDING REQUESTS
+// --- PENDING REQUESTS ---
 let pendingRequests = [];
 let pendingNewPlayers = [];
 
-// --- RENDER LADDER ---
+// --- LOAD LADDER ---
 function loadLadder() {
   const ladder = document.getElementById("ladder");
   ladder.innerHTML = "";
@@ -106,6 +110,7 @@ function submitRequestChange() {
   const tIndex = parseInt(document.getElementById("target").value);
   const score = document.getElementById("score").value.trim();
   const [cScore, tScore] = score.split("-").map(Number);
+
   if (isNaN(cScore) || isNaN(tScore) || cScore <= tScore || cScore > 5 || tScore > 5) {
     alert("Invalid score. Challenger must win, max 5 games each.");
     return;
@@ -139,22 +144,33 @@ function submitNewPlayer() {
 // --- ADMIN APPROVE REQUESTS ---
 const adminApproveBtn = document.getElementById("adminApproveBtn");
 adminApproveBtn.onclick = () => {
-  // process ladder change requests
+  // process ladder changes
   pendingRequests.forEach(req => {
     const { cIndex, tIndex } = req;
     const challenger = ladderData.players[cIndex];
-    const target = ladderData.players[tIndex];
-    // remove challenger
     ladderData.players.splice(cIndex, 1);
-    // insert above target
     ladderData.players.splice(tIndex, 0, challenger);
   });
   pendingRequests = [];
+
   // process new players
   pendingNewPlayers.forEach(name => ladderData.players.push({ name }));
   pendingNewPlayers = [];
+
   loadLadder();
   alert("All pending requests approved!");
+};
+
+// --- DOWNLOAD JSON ---
+const downloadJSONBtn = document.getElementById("downloadJSONBtn");
+downloadJSONBtn.onclick = () => {
+  const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(ladderData, null, 2));
+  const a = document.createElement("a");
+  a.href = dataStr;
+  a.download = "ladder.json";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
 };
 </script>
 
