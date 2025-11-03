@@ -47,20 +47,35 @@
 // ---- configure once ----
 const OWNER = "BH-Squash-Ladder";
 const REPO = "BH-Squash-Ladder.github.io";
-const DATA_PATH = "data/ladder.json"; // same as action uses
+const DATA_PATH = "data/ladder.json"; // make sure this file exists in the /data folder of your repo
 
 // ---- load ladder (read only) ----
 async function loadLadder(){
-  const res = await fetch(`https://raw.githubusercontent.com/${OWNER}/${REPO}/main/${DATA_PATH}?t=${Date.now()}`);
-  const data = await res.json();
   const ladder = document.getElementById("ladder");
-  ladder.innerHTML = "";
-  data.players.forEach((p,i)=>{
-    ladder.innerHTML += `<li class="bg-slate-900 p-3 rounded border border-slate-700">
-      <span class="font-bold mr-3">#${i+1}</span>${p.name}
-    </li>`;
-  });
+  ladder.innerHTML = "<li>Loading ladder...</li>";
+
+  const url = `https://raw.githubusercontent.com/${OWNER}/${REPO}/main/${DATA_PATH}?t=${Date.now()}`;
+
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+    const data = await res.json();
+
+    if (!data.players || !Array.isArray(data.players)) throw new Error("Invalid JSON structure");
+
+    ladder.innerHTML = "";
+    data.players.forEach((p,i)=>{
+      ladder.innerHTML += `<li class="bg-slate-900 p-3 rounded border border-slate-700 text-slate-100">
+        <span class="font-bold mr-3">#${i+1}</span>${p.name}
+      </li>`;
+    });
+  } catch (err) {
+    console.error("Error loading ladder:", err);
+    ladder.innerHTML = `<li class="text-red-500">Error loading ladder: ${err.message}</li>`;
+  }
 }
+
+// Load ladder on page load
 loadLadder();
 
 // ---- Request Change → open issue form directly ----
