@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Squash Ladder</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- React + ReactDOM -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+</head>
+<body class="bg-slate-50 p-6">
+  <div id="root"></div>
+
+  <script type="text/javascript">
+    const { useState, useEffect } = React;
+
+    const SAMPLE_PLAYERS = [
+      { id: "p1", name: "Alice" },
+      { id: "p2", name: "Ben" },
+      { id: "p3", name: "Carl" },
+      { id: "p4", name: "Diane" },
+      { id: "p5", name: "Eve" },
+    ];
+
+    const STORAGE_KEY = "squash_ladder_v1";
+    const REQUESTS_KEY = "squash_requests_v1";
+
+    function App() {
+      const [players, setPlayers] = useState(() => loadPlayers());
+      const [requests, setRequests] = useState(() => loadRequests());
+      const [showRequestModal, setShowRequestModal] = useState(false);
+      const [selectedChallenger, setSelectedChallenger] = useState("");
+      const [selectedTarget, setSelectedTarget] = useState("");
+      const [notes, setNotes] = useState("");
+      const [isAdmin, setIsAdmin] = useState(false);
+      const [adminPass, setAdminPass] = useState("");
+      const [filter, setFilter] = useState("");
+
+      useEffect(() => savePlayers(players), [players]);
+      useEffect(() => saveRequests(requests), [requests]);
+
+      function loadPlayers() {
+        try {
+          const raw = localStorage.getItem(STORAGE_KEY);
+          if (raw) return JSON.parse(raw);
+        } catch (e) {}
+        return SAMPLE_PLAYERS;
+      }
+
+      function savePlayers(list) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+      }
+
+      function loadRequests() {
+        try {
+          const raw = localStorage.getItem(REQUESTS_KEY);
+          if (raw) return JSON.parse(raw);
+        } catch (e) {}
+        return [];
+      }
+
+      function saveRequests(list) {
+        localStorage.setItem(REQUESTS_KEY, JSON.stringify(list));
+      }
+
+      function openRequestModal() {
+        setSelectedChallenger(players[0]?.id || "");
+        setSelectedTarget(players[1]?.id || "");
+        setNotes("");
+        setShowRequestModal(true);
+      }
+
+      function submitRequest(e) {
+        e.preventDefault();
+        if (!selectedChallenger || !selectedTarget || selectedChallenger === selectedTarget) return;
+        const request = {
+          id: `r_${Date.now()}`,
+          challenger: selectedChallenger,
+          target: selectedTarget,
+          notes,
+          createdAt: new Date().toISOString(),
+          status: "pending",
+        };
+        setRequests((r) => [request, ...r]);
+        setShowRequestModal(false);
+      }
+
+      function approveRequest(id) {
+        const req = requests.find((r) => r.id === id);
+        if (!req) return;
+        setPlayers((list) => {
+          const challengerIndex = list.findIndex((p) => p.id === req.challenger);
+          const targetIndex = list.findIndex((p) => p.id === req.target);
+          if (challengerIndex === -1 || targetIndex === -1) return list;
+          const newList = list.slice();
+          const [challenger] = newList.splice(challengerIndex, 1);
+          newList.splice(targetIndex, 0, challenger);
+          return newList;
+        });
+        setRequests((rs) => rs.map((r) => (r.id === id ? { ...r, status: "approved", decidedAt: new Date().toISOString() } : r)));
+      }
+
+      function rejectRequest(id) {
+        setRequests((rs) => rs.map((r) => (r.id === id ? { ...r, status: "rejected", decidedAt: new Date().toISOString() } : r)));
+      }
+
+      function addPlayer(name) {
+        const id = `p_${Date.now()}`;
+        setPlayers((p) => [...p, { id, name }]);
+      }
+
+      function removePlayer(id) {
+        if (!confirm("Remove player?")) return;
+        setPlayers((p) => p.filter((x) => x.id !== id));
+        setRequests((rs) => rs.filter((r) => r.challenger !== id && r.target !== id));
+      }
+
+      function toggleAdmin() {
+        if (adminPass === "admin123") {
+          setIsAdmin((s) => !s);
+          setAdminPass("");
+        } else alert("Wrong admin password (demo: admin123)");
+      }
+
+      const visiblePlayers = players.filter((p) => p.name.toLowerCase().includes(filter.toLowerCase()));
+
+      return (
+        React.createElement("div", { className: "max-w-5xl mx-auto" },
+          React.createElement("header", { className: "flex items-center justify-between mb-6" },
+            React.createElement("h1", { className: "text-3xl font-extrabold" }, "Squash Ladder — Group Log"),
+            React.createElement("div", { className: "flex items-center gap-3" },
+              React.createElement("input", { className: "border rounded px-2 py-1", placeholder: "Search player", value: filter, onChange: (e) => setFilter(e.target.value) }),
+              React.createElement("button", { className: "px-3 py-1 rounded bg-indigo-600 text-white", onClick: openRequestModal }, "Request Change"),
+              React.createElement("input", { type: "password", className: "border rounded px-2 py-1", placeholder: "admin pass", value: adminPass, onChange: (e) => setAdminPass(e.target.value) }),
+              React.createElement("button", { className: `px-3 py-1 rounded ${isAdmin ? 'bg-red-500 text-white' : 'bg-gray-200'}`, onClick: toggleAdmin }, isAdmin ? "Exit Admin" : "Enter Admin")
+            )
+          ),
+
+          React.createElement("main", { className: "grid md:grid-cols-2 gap-6" },
+            /* Ladder */
+            React.createElement("section", { className: "bg-white rounded shadow p-4" },
+              React.createElement("h2", { className: "text-xl font-semibold mb-3" }, "Current Ladder"),
+              React.createElement("ol", { className: "space-y-2" },
+                visiblePlayers.map((p, i) =>
+                  React.createElement("li", { key: p.id, className: "flex items-center justify-between border rounded p-3" },
+                    React.createElement("div", { className: "flex items-center gap-3" },
+                      React.createElement("div", { className: "w-10 text-center font-bold" }, `#${i+1}`),
+                      React.createElement("div", null,
+                        React.createElement("div", { className: "font-medium" }, p.name),
+                        React.createElement("div", { className: "text-xs text-slate-500" }, p.id)
+                      )
+                    ),
+                    isAdmin && React.createElement("button", { className: "px-2 py-1 text-sm bg-rose-500 text-white rounded", onClick: () => removePlayer(p.id) }, "Remove")
+                  )
+                )
+              ),
+              React.createElement(AddPlayerForm, { onAdd: addPlayer })
+            ),
+
+            /* Requests */
+            React.createElement("section", { className: "bg-white rounded shadow p-4" },
+              React.createElement("h2", { className: "text-xl font-semibold mb-3" }, "Requests"),
+              requests.map((r) =>
+                React.createElement("div", { key: r.id, className: "border rounded p-3 mb-3" },
+                  React.createElement("div", null,
+                    `${getName(r.challenger, players)} requests to move above ${getName(r.target, players)}`
+                  ),
+                  isAdmin && r.status === "pending" && React.createElement("div", { className: "flex gap-2 mt-2" },
+                    React.createElement("button", { className: "px-3 py-1 bg-green-600 text-white rounded", onClick: () => approveRequest(r.id) }, "Approve"),
+                    React.createElement("button", { className: "px-3 py-1 bg-amber-300 rounded", onClick: () => rejectRequest(r.id) }, "Reject")
+                  )
+                )
+              )
+            )
+          ),
+
+          showRequestModal && React.createElement(RequestModal, { players, selectedChallenger, setSelectedChallenger, selectedTarget, setSelectedTarget, notes, setNotes, submitRequest, close: () => setShowRequestModal(false) })
+        )
+      );
+    }
+
+    function getName(id, players) {
+      return players.find((p) => p.id === id)?.name || id;
+    }
+
+    function AddPlayerForm({ onAdd }) {
+      const [name, setName] = useState("");
+      return React.createElement("form", { className: "mt-4 flex gap-2", onSubmit: (e) => { e.preventDefault(); if (!name.trim()) return; onAdd(name.trim()); setName(""); }},
+        React.createElement("input", { className: "flex-1 border rounded px-2 py-1", placeholder: "New player name", value: name, onChange: (e) => setName(e.target.value) }),
+        React.createElement("button", { className: "px-3 py-1 bg-green-600 text-white rounded", type: "submit" }, "Add")
+      );
+    }
+
+    function RequestModal({ players, selectedChallenger, setSelectedChallenger, selectedTarget, setSelectedTarget, notes, setNotes, submitRequest, close }) {
+      return React.createElement("div", { className: "fixed inset-0 bg-black/40 flex items-center justify-center" },
+        React.createElement("form", { className: "bg-white rounded p-6 w-full max-w-lg", onSubmit: submitRequest },
+          React.createElement("h3", { className: "text-lg font-semibold mb-3" }, "New Ladder Change Request"),
+          React.createElement("select", { className: "w-full border rounded p-2 mb-3", value: selectedChallenger, onChange: (e) => setSelectedChallenger(e.target.value) }, players.map(p => React.createElement("option", { key: p.id, value: p.id }, p.name))),
+          React.createElement("select", { className: "w-full border rounded p-2 mb-3", value: selectedTarget, onChange: (e) => setSelectedTarget(e.target.value) }, players.map(p => React.createElement("option", { key: p.id, value: p.id }, p.name))),
+          React.createElement("textarea", { className: "w-full border rounded p-2 mb-3", rows: 3, value: notes, onChange: (e) => setNotes(e.target.value) }),
+          React.createElement("div", { className: "flex justify-end gap-2" },
+            React.createElement("button", { type: "button", className: "px-3 py-1 border rounded", onClick: close }, "Cancel"),
+            React.createElement("button", { type: "submit", className: "px-3 py-1 bg-indigo-600 text-white rounded" }, "Send Request")
+          )
+        )
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
+  </script>
+</body>
+</html>
