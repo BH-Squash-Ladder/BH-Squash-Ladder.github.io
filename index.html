@@ -432,447 +432,509 @@
 
     <script>
         // Configuration for GitHub Pages
-        const GITHUB_CONFIG = {
-            username: 'BH-Squash-Ladder',
-            repo: 'BH-Squash-Ladder.github.io',
-            branch: 'main'
-        };
+const GITHUB_CONFIG = {
+    username: 'BH-Squash-Ladder',
+    repo: 'BH-Squash-Ladder.github.io',
+    token: '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',
+    branch: 'main'
+};
 
-        // File paths - these will be hosted via GitHub Pages
-        const DATA_URLS = {
-            ladder: 'https://bh-squash-ladder.github.io/data/ladder.json',
-            pending: 'https://bh-squash-ladder.github.io/data/pending.json'
-        };
+// File paths - these will be hosted via GitHub Pages
+const DATA_URLS = {
+    ladder: 'https://bh-squash-ladder.github.io/data/ladder.json',
+    pending: 'https://bh-squash-ladder.github.io/data/pending.json'
+};
 
-        let ladderData = [];
-        let pendingRequests = [];
-        let isAdmin = false;
-        const adminPassword = "admin123";
+let ladderData = [];
+let pendingRequests = [];
+let isAdmin = false;
+const adminPassword = "admin123";
 
-        // DOM Elements
-        const ladderBody = document.getElementById('ladderBody');
-        const joinForm = document.getElementById('joinForm');
-        const challengeForm = document.getElementById('challengeForm');
-        const challengerSelect = document.getElementById('challenger');
-        const opponentSelect = document.getElementById('opponent');
-        const statusMessage = document.getElementById('statusMessage');
-        const loginBtn = document.getElementById('loginBtn');
-        const loginModal = document.getElementById('loginModal');
-        const cancelLogin = document.getElementById('cancelLogin');
-        const confirmLogin = document.getElementById('confirmLogin');
-        const adminPanel = document.getElementById('adminPanel');
-        const pendingRequestsContainer = document.getElementById('pendingRequests');
+// DOM Elements
+const ladderBody = document.getElementById('ladderBody');
+const joinForm = document.getElementById('joinForm');
+const challengeForm = document.getElementById('challengeForm');
+const challengerSelect = document.getElementById('challenger');
+const opponentSelect = document.getElementById('opponent');
+const statusMessage = document.getElementById('statusMessage');
+const loginBtn = document.getElementById('loginBtn');
+const loginModal = document.getElementById('loginModal');
+const cancelLogin = document.getElementById('cancelLogin');
+const confirmLogin = document.getElementById('confirmLogin');
+const adminPanel = document.getElementById('adminPanel');
+const pendingRequestsContainer = document.getElementById('pendingRequests');
 
-        // Initialize the application
-        async function init() {
-            showStatus('Loading data...', 'success');
-            
-            try {
-                await loadData();
-                renderLadder();
-                updatePlayerSelects();
-                showStatus('Data loaded successfully', 'success');
-            } catch (error) {
-                console.error('Error loading data:', error);
-                showStatus('Error loading data. Using sample data.', 'error');
-                // Load sample data if GitHub loading fails
-                loadSampleData();
-                renderLadder();
-                updatePlayerSelects();
-            }
-            
-            // Event listeners
-            joinForm.addEventListener('submit', handleJoinRequest);
-            challengeForm.addEventListener('submit', handleChallenge);
-            loginBtn.addEventListener('click', showLoginModal);
-            cancelLogin.addEventListener('click', hideLoginModal);
-            confirmLogin.addEventListener('click', handleLogin);
-            challengerSelect.addEventListener('change', updateOpponentOptions);
+// Initialize the application
+async function init() {
+    showStatus('Loading data...', 'success');
+    
+    try {
+        await loadData();
+        renderLadder();
+        updatePlayerSelects();
+        showStatus('Data loaded successfully', 'success');
+    } catch (error) {
+        console.error('Error loading data:', error);
+        showStatus('Error loading data. Using sample data.', 'error');
+        // Load sample data if GitHub loading fails
+        loadSampleData();
+        renderLadder();
+        updatePlayerSelects();
+    }
+    
+    // Event listeners
+    joinForm.addEventListener('submit', handleJoinRequest);
+    challengeForm.addEventListener('submit', handleChallenge);
+    loginBtn.addEventListener('click', showLoginModal);
+    cancelLogin.addEventListener('click', hideLoginModal);
+    confirmLogin.addEventListener('click', handleLogin);
+    challengerSelect.addEventListener('change', updateOpponentOptions);
+}
+
+// Load data from GitHub Pages
+async function loadData() {
+    try {
+        console.log('Loading data from GitHub Pages...');
+        
+        const [ladderResponse, pendingResponse] = await Promise.all([
+            fetch(DATA_URLS.ladder + '?t=' + Date.now()), // Cache bust
+            fetch(DATA_URLS.pending + '?t=' + Date.now())
+        ]);
+
+        if (!ladderResponse.ok) throw new Error(`Ladder data: ${ladderResponse.status}`);
+        if (!pendingResponse.ok) throw new Error(`Pending data: ${pendingResponse.status}`);
+
+        ladderData = await ladderResponse.json();
+        pendingRequests = await pendingResponse.json();
+
+        console.log('Data loaded successfully:', { ladderData, pendingRequests });
+    } catch (error) {
+        console.error('Error loading data from GitHub Pages:', error);
+        throw error;
+    }
+}
+
+// Save data using GitHub API
+async function saveData() {
+    try {
+        // Store in localStorage as backup
+        localStorage.setItem('squashLadderData', JSON.stringify(ladderData));
+        localStorage.setItem('squashLadderPending', JSON.stringify(pendingRequests));
+        
+        // Try to update via GitHub API if we have a token
+        if (GITHUB_CONFIG.token && GITHUB_CONFIG.token !== 'YOUR_GITHUB_TOKEN') {
+            await updateDataViaGitHub();
         }
+        
+        return true;
+    } catch (error) {
+        console.error('Error saving data:', error);
+        showStatus('Changes saved locally. GitHub update may have failed.', 'error');
+        return true; // Still return true as local save worked
+    }
+}
 
-        // Load data from GitHub Pages
-        async function loadData() {
-            try {
-                console.log('Loading data from GitHub Pages...');
-                
-                const [ladderResponse, pendingResponse] = await Promise.all([
-                    fetch(DATA_URLS.ladder + '?t=' + Date.now()), // Cache bust
-                    fetch(DATA_URLS.pending + '?t=' + Date.now())
-                ]);
+// Update data via GitHub API
+async function updateDataViaGitHub() {
+    const updateData = {
+        ladder: ladderData,
+        pending: pendingRequests,
+        timestamp: new Date().toISOString()
+    };
+    
+    // Create a GitHub issue with the update data
+    const response = await fetch(`https://api.github.com/repos/${GITHUB_CONFIG.username}/${GITHUB_CONFIG.repo}/issues`, {
+        method: 'POST',
+        headers: {
+            'Authorization': `token ${GITHUB_CONFIG.token}`,
+            'Accept': 'application/vnd.github.v3+json',
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            title: `Ladder Update - ${new Date().toLocaleString()}`,
+            body: `Please update the ladder data:\n\n\`\`\`json\n${JSON.stringify(updateData, null, 2)}\n\`\`\``,
+            labels: ['ladder-update']
+        })
+    });
+    
+    if (!response.ok) {
+        throw new Error(`GitHub API error: ${response.status}`);
+    }
+    
+    console.log('Update request sent to GitHub');
+}
 
-                if (!ladderResponse.ok) throw new Error(`Ladder data: ${ladderResponse.status}`);
-                if (!pendingResponse.ok) throw new Error(`Pending data: ${pendingResponse.status}`);
+// Load sample data if GitHub fails
+function loadSampleData() {
+    // Try to load from localStorage first
+    const savedData = localStorage.getItem('squashLadderData');
+    const savedPending = localStorage.getItem('squashLadderPending');
+    
+    if (savedData && savedPending) {
+        ladderData = JSON.parse(savedData);
+        pendingRequests = JSON.parse(savedPending);
+        console.log('Loaded data from localStorage');
+    } else {
+        // Default sample data
+        ladderData = [
+            { id: 1, firstName: "John", lastName: "Smith", position: 1, wins: 5, losses: 1 },
+            { id: 2, firstName: "Sarah", lastName: "Johnson", position: 2, wins: 4, losses: 2 },
+            { id: 3, firstName: "Michael", lastName: "Williams", position: 3, wins: 3, losses: 3 },
+            { id: 4, firstName: "Emily", lastName: "Brown", position: 4, wins: 2, losses: 4 },
+            { id: 5, firstName: "David", lastName: "Jones", position: 5, wins: 1, losses: 5 }
+        ];
+        pendingRequests = [];
+        console.log('Loaded default sample data');
+    }
+}
 
-                ladderData = await ladderResponse.json();
-                pendingRequests = await pendingResponse.json();
+// Render the ladder table
+function renderLadder() {
+    ladderBody.innerHTML = '';
+    
+    // Sort by position first
+    ladderData.sort((a, b) => a.position - b.position);
+    
+    ladderData.forEach(player => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td class="position">${player.position}</td>
+            <td>${player.firstName} ${player.lastName}</td>
+            <td>${player.wins}</td>
+            <td>${player.losses}</td>
+        `;
+        ladderBody.appendChild(row);
+    });
+}
 
-                console.log('Data loaded successfully:', { ladderData, pendingRequests });
-            } catch (error) {
-                console.error('Error loading data from GitHub Pages:', error);
-                throw error;
-            }
-        }
+// Update player dropdowns
+function updatePlayerSelects() {
+    // Clear existing options (except the first placeholder)
+    challengerSelect.innerHTML = '<option value="">Select your name</option>';
+    opponentSelect.innerHTML = '<option value="">Select opponent</option>';
+    
+    ladderData.forEach(player => {
+        const option = document.createElement('option');
+        option.value = player.id;
+        option.textContent = `${player.firstName} ${player.lastName} (Position ${player.position})`;
+        challengerSelect.appendChild(option);
+    });
+}
 
-        // For GitHub Pages, we can only read data. Changes will be stored locally.
-        // In a real implementation, you'd need a backend or GitHub Actions to handle writes.
-        function saveData() {
-            // Store data in localStorage as fallback
-            localStorage.setItem('squashLadderData', JSON.stringify(ladderData));
-            localStorage.setItem('squashLadderPending', JSON.stringify(pendingRequests));
-            console.log('Data saved to localStorage (GitHub Pages is read-only)');
-            return true;
-        }
+// Update opponent options based on selected challenger
+function updateOpponentOptions() {
+    const challengerId = parseInt(challengerSelect.value);
+    
+    if (!challengerId) {
+        opponentSelect.innerHTML = '<option value="">Select opponent</option>';
+        return;
+    }
+    
+    const challenger = ladderData.find(p => p.id === challengerId);
+    if (!challenger) return;
+    
+    // Clear opponent options
+    opponentSelect.innerHTML = '<option value="">Select opponent</option>';
+    
+    // Only show players up to 3 positions above the challenger
+    const eligibleOpponents = ladderData.filter(player => {
+        return player.position < challenger.position && 
+               player.position >= challenger.position - 3;
+    });
+    
+    eligibleOpponents.forEach(player => {
+        const option = document.createElement('option');
+        option.value = player.id;
+        option.textContent = `${player.firstName} ${player.lastName} (Position ${player.position})`;
+        opponentSelect.appendChild(option);
+    });
+    
+    // If no eligible opponents, show message
+    if (eligibleOpponents.length === 0) {
+        const option = document.createElement('option');
+        option.value = "";
+        option.textContent = "No eligible opponents (must be within 3 positions above you)";
+        option.disabled = true;
+        opponentSelect.appendChild(option);
+    }
+}
 
-        // Load sample data if GitHub fails
-        function loadSampleData() {
-            // Try to load from localStorage first
-            const savedData = localStorage.getItem('squashLadderData');
-            const savedPending = localStorage.getItem('squashLadderPending');
-            
-            if (savedData && savedPending) {
-                ladderData = JSON.parse(savedData);
-                pendingRequests = JSON.parse(savedPending);
-                console.log('Loaded data from localStorage');
-            } else {
-                // Default sample data
-                ladderData = [
-                    { id: 1, firstName: "John", lastName: "Smith", position: 1, wins: 5, losses: 1 },
-                    { id: 2, firstName: "Sarah", lastName: "Johnson", position: 2, wins: 4, losses: 2 },
-                    { id: 3, firstName: "Michael", lastName: "Williams", position: 3, wins: 3, losses: 3 },
-                    { id: 4, firstName: "Emily", lastName: "Brown", position: 4, wins: 2, losses: 4 },
-                    { id: 5, firstName: "David", lastName: "Jones", position: 5, wins: 1, losses: 5 }
-                ];
-                pendingRequests = [];
-                console.log('Loaded default sample data');
-            }
-        }
-
-        // Render the ladder table
-        function renderLadder() {
-            ladderBody.innerHTML = '';
-            
-            ladderData.forEach(player => {
-                const row = document.createElement('tr');
-                row.innerHTML = `
-                    <td class="position">${player.position}</td>
-                    <td>${player.firstName} ${player.lastName}</td>
-                    <td>${player.wins}</td>
-                    <td>${player.losses}</td>
-                `;
-                ladderBody.appendChild(row);
-            });
-        }
-
-        // Update player dropdowns
-        function updatePlayerSelects() {
-            // Clear existing options (except the first placeholder)
-            challengerSelect.innerHTML = '<option value="">Select your name</option>';
-            opponentSelect.innerHTML = '<option value="">Select opponent</option>';
-            
-            ladderData.forEach(player => {
-                const option = document.createElement('option');
-                option.value = player.id;
-                option.textContent = `${player.firstName} ${player.lastName} (Position ${player.position})`;
-                challengerSelect.appendChild(option);
-            });
-        }
-
-        // Update opponent options based on selected challenger
-        function updateOpponentOptions() {
-            const challengerId = parseInt(challengerSelect.value);
-            
-            if (!challengerId) {
-                opponentSelect.innerHTML = '<option value="">Select opponent</option>';
-                return;
-            }
-            
-            const challenger = ladderData.find(p => p.id === challengerId);
-            if (!challenger) return;
-            
-            // Clear opponent options
-            opponentSelect.innerHTML = '<option value="">Select opponent</option>';
-            
-            // Only show players up to 3 positions above the challenger
-            const eligibleOpponents = ladderData.filter(player => {
-                return player.position < challenger.position && 
-                       player.position >= challenger.position - 3;
-            });
-            
-            eligibleOpponents.forEach(player => {
-                const option = document.createElement('option');
-                option.value = player.id;
-                option.textContent = `${player.firstName} ${player.lastName} (Position ${player.position})`;
-                opponentSelect.appendChild(option);
-            });
-            
-            // If no eligible opponents, show message
-            if (eligibleOpponents.length === 0) {
-                const option = document.createElement('option');
-                option.value = "";
-                option.textContent = "No eligible opponents (must be within 3 positions above you)";
-                option.disabled = true;
-                opponentSelect.appendChild(option);
-            }
-        }
-
-        // Handle join request
-        async function handleJoinRequest(e) {
-            e.preventDefault();
-            
-            const firstName = document.getElementById('firstName').value.trim();
-            const lastName = document.getElementById('lastName').value.trim();
-            
-            if (!firstName || !lastName) {
-                showStatus('Please enter both first and last name', 'error');
-                return;
-            }
-            
-            // Check if player already exists
-            const existingPlayer = ladderData.find(p => 
-                p.firstName.toLowerCase() === firstName.toLowerCase() && 
-                p.lastName.toLowerCase() === lastName.toLowerCase()
-            );
-            
-            if (existingPlayer) {
-                showStatus('This player is already in the ladder', 'error');
-                return;
-            }
-            
-            // Create join request
-            const request = {
-                id: Date.now(),
-                type: 'join',
-                firstName,
-                lastName,
-                timestamp: new Date().toISOString()
-            };
-            
-            pendingRequests.push(request);
-            saveData();
-            
-            showStatus('Join request submitted. Waiting for admin approval.', 'success');
-            joinForm.reset();
-            
-            // If admin is logged in, update the pending requests display
-            if (isAdmin) {
-                renderPendingRequests();
-            }
-        }
-
-        // Handle challenge submission
-        async function handleChallenge(e) {
-            e.preventDefault();
-            
-            const challengerId = parseInt(challengerSelect.value);
-            const opponentId = parseInt(opponentSelect.value);
-            const result = document.getElementById('result').value;
-            
-            if (!challengerId || !opponentId || !result) {
-                showStatus('Please fill all fields', 'error');
-                return;
-            }
-            
-            const challenger = ladderData.find(p => p.id === challengerId);
-            const opponent = ladderData.find(p => p.id === opponentId);
-            
-            // Check if challenger is allowed to challenge this opponent
-            if (opponent.position >= challenger.position || 
-                opponent.position < challenger.position - 3) {
-                showStatus('You can only challenge players up to 3 positions above you', 'error');
-                return;
-            }
-            
-            // Create challenge request
-            const request = {
-                id: Date.now(),
-                type: 'challenge',
-                challengerId,
-                opponentId,
-                result,
-                timestamp: new Date().toISOString()
-            };
-            
-            pendingRequests.push(request);
-            saveData();
-            
-            showStatus('Challenge result submitted. Waiting for admin approval.', 'success');
-            challengeForm.reset();
-            
-            // If admin is logged in, update the pending requests display
-            if (isAdmin) {
-                renderPendingRequests();
-            }
-        }
-
-        // Show login modal
-        function showLoginModal() {
-            if (isAdmin) {
-                // Logout if already admin
-                isAdmin = false;
-                adminPanel.style.display = 'none';
-                loginBtn.textContent = 'Admin Login';
-                showStatus('Admin logged out', 'success');
-                return;
-            }
-            loginModal.style.display = 'flex';
-        }
-
-        // Hide login modal
-        function hideLoginModal() {
-            loginModal.style.display = 'none';
-            document.getElementById('adminPassword').value = '';
-        }
-
-        // Handle admin login
-        function handleLogin() {
-            const password = document.getElementById('adminPassword').value;
-            
-            if (password === adminPassword) {
-                isAdmin = true;
-                adminPanel.style.display = 'block';
-                loginBtn.textContent = 'Admin Logout';
-                renderPendingRequests();
-                hideLoginModal();
-                showStatus('Admin login successful', 'success');
-            } else {
-                showStatus('Incorrect password', 'error');
-            }
-        }
-
-        // Render pending requests for admin
-        function renderPendingRequests() {
-            if (!isAdmin) return;
-            
-            pendingRequestsContainer.innerHTML = '';
-            
-            if (pendingRequests.length === 0) {
-                pendingRequestsContainer.innerHTML = '<p>No pending requests</p>';
-                return;
-            }
-            
-            pendingRequests.forEach(request => {
-                const requestElement = document.createElement('div');
-                requestElement.className = 'request-item';
-                
-                if (request.type === 'join') {
-                    requestElement.innerHTML = `
-                        <div class="request-info">
-                            <strong>Join Request</strong><br>
-                            ${request.firstName} ${request.lastName}<br>
-                            <small>${new Date(request.timestamp).toLocaleString()}</small>
-                        </div>
-                        <div class="request-actions">
-                            <button class="btn btn-primary" onclick="approveRequest(${request.id})">Approve</button>
-                            <button class="btn btn-danger" onclick="rejectRequest(${request.id})">Reject</button>
-                        </div>
-                    `;
-                } else if (request.type === 'challenge') {
-                    const challenger = ladderData.find(p => p.id === request.challengerId);
-                    const opponent = ladderData.find(p => p.id === request.opponentId);
-                    
-                    requestElement.innerHTML = `
-                        <div class="request-info">
-                            <strong>Challenge Result</strong><br>
-                            ${challenger.firstName} ${challenger.lastName} (Pos ${challenger.position}) 
-                            vs ${opponent.firstName} ${opponent.lastName} (Pos ${opponent.position})<br>
-                            Result: ${request.result === 'win' ? 'Challenger Won' : 'Challenger Lost'}<br>
-                            <small>${new Date(request.timestamp).toLocaleString()}</small>
-                        </div>
-                        <div class="request-actions">
-                            <button class="btn btn-primary" onclick="approveRequest(${request.id})">Approve</button>
-                            <button class="btn btn-danger" onclick="rejectRequest(${request.id})">Reject</button>
-                        </div>
-                    `;
-                }
-                
-                pendingRequestsContainer.appendChild(requestElement);
-            });
-        }
-
-        // Approve a request
-        async function approveRequest(requestId) {
-            const requestIndex = pendingRequests.findIndex(r => r.id === requestId);
-            if (requestIndex === -1) return;
-            
-            const request = pendingRequests[requestIndex];
-            
-            if (request.type === 'join') {
-                // Add new player to the bottom of the ladder
-                const newPlayer = {
-                    id: Date.now(),
-                    firstName: request.firstName,
-                    lastName: request.lastName,
-                    position: ladderData.length + 1,
-                    wins: 0,
-                    losses: 0
-                };
-                
-                ladderData.push(newPlayer);
-            } else if (request.type === 'challenge' && request.result === 'win') {
-                // Handle challenge win - update positions
-                const challenger = ladderData.find(p => p.id === request.challengerId);
-                const opponent = ladderData.find(p => p.id === request.opponentId);
-                
-                // Only update if challenger is below opponent
-                if (challenger.position > opponent.position) {
-                    // Swap positions
-                    const tempPosition = challenger.position;
-                    challenger.position = opponent.position;
-                    opponent.position = tempPosition;
-                    
-                    // Update wins/losses
-                    challenger.wins += 1;
-                    opponent.losses += 1;
-                    
-                    // Sort ladder by position
-                    ladderData.sort((a, b) => a.position - b.position);
-                }
-            } else if (request.type === 'challenge' && request.result === 'loss') {
-                // Handle challenge loss - just update stats
-                const challenger = ladderData.find(p => p.id === request.challengerId);
-                const opponent = ladderData.find(p => p.id === request.opponentId);
-                
-                challenger.losses += 1;
-                opponent.wins += 1;
-            }
-            
-            // Remove the request
-            pendingRequests.splice(requestIndex, 1);
-            
-            // Update UI and storage
-            renderLadder();
-            updatePlayerSelects();
-            saveData();
+// Handle join request
+async function handleJoinRequest(e) {
+    e.preventDefault();
+    
+    const firstName = document.getElementById('firstName').value.trim();
+    const lastName = document.getElementById('lastName').value.trim();
+    
+    if (!firstName || !lastName) {
+        showStatus('Please enter both first and last name', 'error');
+        return;
+    }
+    
+    // Check if player already exists
+    const existingPlayer = ladderData.find(p => 
+        p.firstName.toLowerCase() === firstName.toLowerCase() && 
+        p.lastName.toLowerCase() === lastName.toLowerCase()
+    );
+    
+    if (existingPlayer) {
+        showStatus('This player is already in the ladder', 'error');
+        return;
+    }
+    
+    // Create join request
+    const request = {
+        id: Date.now(),
+        type: 'join',
+        firstName,
+        lastName,
+        timestamp: new Date().toISOString()
+    };
+    
+    pendingRequests.push(request);
+    const saved = await saveData();
+    
+    if (saved) {
+        showStatus('Join request submitted. Waiting for admin approval.', 'success');
+        joinForm.reset();
+        
+        // If admin is logged in, update the pending requests display
+        if (isAdmin) {
             renderPendingRequests();
-            
-            showStatus('Request approved', 'success');
         }
+    }
+}
 
-        // Reject a request
-        async function rejectRequest(requestId) {
-            const requestIndex = pendingRequests.findIndex(r => r.id === requestId);
-            if (requestIndex === -1) return;
-            
-            pendingRequests.splice(requestIndex, 1);
-            saveData();
+// Handle challenge submission
+async function handleChallenge(e) {
+    e.preventDefault();
+    
+    const challengerId = parseInt(challengerSelect.value);
+    const opponentId = parseInt(opponentSelect.value);
+    const result = document.getElementById('result').value;
+    
+    if (!challengerId || !opponentId || !result) {
+        showStatus('Please fill all fields', 'error');
+        return;
+    }
+    
+    const challenger = ladderData.find(p => p.id === challengerId);
+    const opponent = ladderData.find(p => p.id === opponentId);
+    
+    // Check if challenger is allowed to challenge this opponent
+    if (opponent.position >= challenger.position || 
+        opponent.position < challenger.position - 3) {
+        showStatus('You can only challenge players up to 3 positions above you', 'error');
+        return;
+    }
+    
+    // Create challenge request
+    const request = {
+        id: Date.now(),
+        type: 'challenge',
+        challengerId,
+        opponentId,
+        result,
+        timestamp: new Date().toISOString()
+    };
+    
+    pendingRequests.push(request);
+    const saved = await saveData();
+    
+    if (saved) {
+        showStatus('Challenge result submitted. Waiting for admin approval.', 'success');
+        challengeForm.reset();
+        
+        // If admin is logged in, update the pending requests display
+        if (isAdmin) {
             renderPendingRequests();
-            
-            showStatus('Request rejected', 'success');
         }
+    }
+}
 
-        // Show status message
-        function showStatus(message, type) {
-            statusMessage.textContent = message;
-            statusMessage.className = `status-message ${type}`;
-            statusMessage.style.display = 'block';
+// Show login modal
+function showLoginModal() {
+    if (isAdmin) {
+        // Logout if already admin
+        isAdmin = false;
+        adminPanel.style.display = 'none';
+        loginBtn.textContent = 'Admin Login';
+        showStatus('Admin logged out', 'success');
+        return;
+    }
+    loginModal.style.display = 'flex';
+}
+
+// Hide login modal
+function hideLoginModal() {
+    loginModal.style.display = 'none';
+    document.getElementById('adminPassword').value = '';
+}
+
+// Handle admin login
+function handleLogin() {
+    const password = document.getElementById('adminPassword').value;
+    
+    if (password === adminPassword) {
+        isAdmin = true;
+        adminPanel.style.display = 'block';
+        loginBtn.textContent = 'Admin Logout';
+        renderPendingRequests();
+        hideLoginModal();
+        showStatus('Admin login successful', 'success');
+    } else {
+        showStatus('Incorrect password', 'error');
+    }
+}
+
+// Render pending requests for admin
+function renderPendingRequests() {
+    if (!isAdmin) return;
+    
+    pendingRequestsContainer.innerHTML = '';
+    
+    if (pendingRequests.length === 0) {
+        pendingRequestsContainer.innerHTML = '<p>No pending requests</p>';
+        return;
+    }
+    
+    pendingRequests.forEach(request => {
+        const requestElement = document.createElement('div');
+        requestElement.className = 'request-item';
+        
+        if (request.type === 'join') {
+            requestElement.innerHTML = `
+                <div class="request-info">
+                    <strong>Join Request</strong><br>
+                    ${request.firstName} ${request.lastName}<br>
+                    <small>${new Date(request.timestamp).toLocaleString()}</small>
+                </div>
+                <div class="request-actions">
+                    <button class="btn btn-primary" onclick="approveRequest(${request.id})">Approve</button>
+                    <button class="btn btn-danger" onclick="rejectRequest(${request.id})">Reject</button>
+                </div>
+            `;
+        } else if (request.type === 'challenge') {
+            const challenger = ladderData.find(p => p.id === request.challengerId);
+            const opponent = ladderData.find(p => p.id === request.opponentId);
             
-            setTimeout(() => {
-                statusMessage.style.display = 'none';
-            }, 5000);
+            requestElement.innerHTML = `
+                <div class="request-info">
+                    <strong>Challenge Result</strong><br>
+                    ${challenger.firstName} ${challenger.lastName} (Pos ${challenger.position}) 
+                    vs ${opponent.firstName} ${opponent.lastName} (Pos ${opponent.position})<br>
+                    Result: ${request.result === 'win' ? 'Challenger Won' : 'Challenger Lost'}<br>
+                    <small>${new Date(request.timestamp).toLocaleString()}</small>
+                </div>
+                <div class="request-actions">
+                    <button class="btn btn-primary" onclick="approveRequest(${request.id})">Approve</button>
+                    <button class="btn btn-danger" onclick="rejectRequest(${request.id})">Reject</button>
+                </div>
+            `;
         }
+        
+        pendingRequestsContainer.appendChild(requestElement);
+    });
+}
 
-        // Initialize the app when DOM is loaded
-        document.addEventListener('DOMContentLoaded', init);
+// Approve a request - CORRECTED LADDER LOGIC
+async function approveRequest(requestId) {
+    const requestIndex = pendingRequests.findIndex(r => r.id === requestId);
+    if (requestIndex === -1) return;
+    
+    const request = pendingRequests[requestIndex];
+    
+    if (request.type === 'join') {
+        // Add new player to the bottom of the ladder
+        const newPlayer = {
+            id: Date.now(),
+            firstName: request.firstName,
+            lastName: request.lastName,
+            position: ladderData.length + 1,
+            wins: 0,
+            losses: 0
+        };
+        
+        ladderData.push(newPlayer);
+    } else if (request.type === 'challenge' && request.result === 'win') {
+        // Handle challenge win - CORRECTED LOGIC
+        const challenger = ladderData.find(p => p.id === request.challengerId);
+        const opponent = ladderData.find(p => p.id === request.opponentId);
+        
+        // Only update if challenger is below opponent (which should always be true for valid challenges)
+        if (challenger.position > opponent.position) {
+            const opponentPosition = opponent.position;
+            const challengerPosition = challenger.position;
+            
+            console.log(`Before: Challenger at ${challengerPosition}, Opponent at ${opponentPosition}`);
+            
+            // Move the challenger up to the opponent's position
+            challenger.position = opponentPosition;
+            
+            // Move the opponent and all players between them down one position
+            ladderData.forEach(player => {
+                if (player.position >= opponentPosition && player.position < challengerPosition && player.id !== challenger.id) {
+                    player.position += 1;
+                    console.log(`Moving ${player.firstName} from ${player.position - 1} to ${player.position}`);
+                }
+            });
+            
+            // Update wins/losses
+            challenger.wins += 1;
+            opponent.losses += 1;
+            
+            console.log(`After: Challenger at ${challenger.position}, Opponent at ${opponent.position}`);
+        }
+    } else if (request.type === 'challenge' && request.result === 'loss') {
+        // Handle challenge loss - just update stats
+        const challenger = ladderData.find(p => p.id === request.challengerId);
+        const opponent = ladderData.find(p => p.id === request.opponentId);
+        
+        challenger.losses += 1;
+        opponent.wins += 1;
+    }
+    
+    // Remove the request
+    pendingRequests.splice(requestIndex, 1);
+    
+    // Update UI and storage
+    renderLadder();
+    updatePlayerSelects();
+    const saved = await saveData();
+    
+    if (saved) {
+        renderPendingRequests();
+        showStatus('Request approved', 'success');
+    }
+}
+
+// Reject a request
+async function rejectRequest(requestId) {
+    const requestIndex = pendingRequests.findIndex(r => r.id === requestId);
+    if (requestIndex === -1) return;
+    
+    pendingRequests.splice(requestIndex, 1);
+    const saved = await saveData();
+    
+    if (saved) {
+        renderPendingRequests();
+        showStatus('Request rejected', 'success');
+    }
+}
+
+// Show status message
+function showStatus(message, type) {
+    statusMessage.textContent = message;
+    statusMessage.className = `status-message ${type}`;
+    statusMessage.style.display = 'block';
+    
+    setTimeout(() => {
+        statusMessage.style.display = 'none';
+    }, 5000);
+}
+
+// Initialize the app when DOM is loaded
+document.addEventListener('DOMContentLoaded', init);
     </script>
 </body>
 </html>
