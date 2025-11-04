@@ -434,158 +434,194 @@
         // Configuration - Update these with your GitHub details
         const GITHUB_CONFIG = {
             // Replace with your GitHub username
-            username: 'YOUR_GITHUB_USERNAME',
+            username: 'bh-squash-ladder',
             // Replace with your repository name
             repo: 'squash-ladder-data',
             // GitHub Personal Access Token with repo permissions
             // Create one at: https://github.com/settings/tokens
-            token: 'YOUR_GITHUB_TOKEN',
+            token: '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',
             // Branch to use (usually 'main' or 'master')
             branch: 'main'
         };
 
-        // File paths in the repository
-        const DATA_FILES = {
-            ladder: 'data/ladder.json',
-            pending: 'data/pending.json'
+       // File paths in the repository
+const DATA_FILES = {
+    ladder: 'data/ladder.json',
+    pending: 'data/pending.json'
+};
+
+let ladderData = [];
+let pendingRequests = [];
+let isAdmin = false;
+const adminPassword = "admin123";
+
+// DOM Elements
+const ladderBody = document.getElementById('ladderBody');
+const joinForm = document.getElementById('joinForm');
+const challengeForm = document.getElementById('challengeForm');
+const challengerSelect = document.getElementById('challenger');
+const opponentSelect = document.getElementById('opponent');
+const statusMessage = document.getElementById('statusMessage');
+const loginBtn = document.getElementById('loginBtn');
+const loginModal = document.getElementById('loginModal');
+const cancelLogin = document.getElementById('cancelLogin');
+const confirmLogin = document.getElementById('confirmLogin');
+const adminPanel = document.getElementById('adminPanel');
+const pendingRequestsContainer = document.getElementById('pendingRequests');
+
+// Initialize the application
+async function init() {
+    showStatus('Loading data...', 'success');
+    
+    try {
+        await loadData();
+        renderLadder();
+        updatePlayerSelects();
+        showStatus('Data loaded successfully', 'success');
+    } catch (error) {
+        console.error('Error loading data:', error);
+        showStatus('Error loading data: ' + error.message, 'error');
+        // Load sample data if GitHub loading fails
+        loadSampleData();
+        renderLadder();
+        updatePlayerSelects();
+    }
+    
+    // Event listeners
+    joinForm.addEventListener('submit', handleJoinRequest);
+    challengeForm.addEventListener('submit', handleChallenge);
+    loginBtn.addEventListener('click', showLoginModal);
+    cancelLogin.addEventListener('click', hideLoginModal);
+    confirmLogin.addEventListener('click', handleLogin);
+    challengerSelect.addEventListener('change', updateOpponentOptions);
+}
+
+// GitHub API functions with better error handling
+async function githubApiRequest(url, options = {}) {
+    const fullUrl = `https://api.github.com${url}`;
+    const defaultOptions = {
+        headers: {
+            'Authorization': `token ${GITHUB_CONFIG.token}`,
+            'Accept': 'application/vnd.github.v3+json',
+            'Content-Type': 'application/json'
+        }
+    };
+    
+    console.log('Making GitHub API request to:', fullUrl);
+    
+    const response = await fetch(fullUrl, { ...defaultOptions, ...options });
+    
+    console.log('GitHub API response status:', response.status, response.statusText);
+    
+    if (!response.ok) {
+        const errorText = await response.text();
+        console.error('GitHub API error details:', errorText);
+        throw new Error(`GitHub API error: ${response.status} ${response.statusText} - ${errorText}`);
+    }
+    
+    return response.json();
+}
+
+async function getFileContent(filePath) {
+    try {
+        console.log('Attempting to get file:', filePath);
+        const url = `/repos/${GITHUB_CONFIG.username}/${GITHUB_CONFIG.repo}/contents/${filePath}`;
+        const fileData = await githubApiRequest(url);
+        
+        // File content is base64 encoded
+        const content = atob(fileData.content);
+        console.log('Successfully loaded file:', filePath, content);
+        return JSON.parse(content);
+    } catch (error) {
+        console.error('Error getting file content for', filePath, error);
+        // If file doesn't exist, return empty array
+        if (error.message.includes('404')) {
+            console.log('File does not exist, returning empty array');
+            return [];
+        }
+        throw error;
+    }
+}
+
+async function updateFile(filePath, content, commitMessage) {
+    try {
+        console.log('Updating file:', filePath, 'with content:', content);
+        
+        // First, get the current file to get its SHA (needed for update)
+        let sha = null;
+        try {
+            const url = `/repos/${GITHUB_CONFIG.username}/${GITHUB_CONFIG.repo}/contents/${filePath}`;
+            const currentFile = await githubApiRequest(url);
+            sha = currentFile.sha;
+            console.log('Found existing file with SHA:', sha);
+        } catch (error) {
+            console.log('File does not exist yet, will create new file');
+            // File doesn't exist yet, that's fine - we'll create it
+        }
+
+        const url = `/repos/${GITHUB_CONFIG.username}/${GITHUB_CONFIG.repo}/contents/${filePath}`;
+        const body = {
+            message: commitMessage,
+            content: btoa(JSON.stringify(content, null, 2)),
+            branch: GITHUB_CONFIG.branch
         };
 
-        let ladderData = [];
-        let pendingRequests = [];
-        let isAdmin = false;
-        const adminPassword = "admin123"; // Simple password for demo
-
-        // DOM Elements
-        const ladderBody = document.getElementById('ladderBody');
-        const joinForm = document.getElementById('joinForm');
-        const challengeForm = document.getElementById('challengeForm');
-        const challengerSelect = document.getElementById('challenger');
-        const opponentSelect = document.getElementById('opponent');
-        const statusMessage = document.getElementById('statusMessage');
-        const loginBtn = document.getElementById('loginBtn');
-        const loginModal = document.getElementById('loginModal');
-        const cancelLogin = document.getElementById('cancelLogin');
-        const confirmLogin = document.getElementById('confirmLogin');
-        const adminPanel = document.getElementById('adminPanel');
-        const pendingRequestsContainer = document.getElementById('pendingRequests');
-
-        // Initialize the application
-        async function init() {
-            showStatus('Loading data...', 'success');
-            
-            try {
-                await loadData();
-                renderLadder();
-                updatePlayerSelects();
-                showStatus('Data loaded successfully', 'success');
-            } catch (error) {
-                console.error('Error loading data:', error);
-                showStatus('Error loading data. Using sample data.', 'error');
-                // Load sample data if GitHub loading fails
-                loadSampleData();
-                renderLadder();
-                updatePlayerSelects();
-            }
-            
-            // Event listeners
-            joinForm.addEventListener('submit', handleJoinRequest);
-            challengeForm.addEventListener('submit', handleChallenge);
-            loginBtn.addEventListener('click', showLoginModal);
-            cancelLogin.addEventListener('click', hideLoginModal);
-            confirmLogin.addEventListener('click', handleLogin);
-            challengerSelect.addEventListener('change', updateOpponentOptions);
+        if (sha) {
+            body.sha = sha;
         }
 
-        // GitHub API functions
-        async function githubApiRequest(url, options = {}) {
-            const fullUrl = `https://api.github.com${url}`;
-            const defaultOptions = {
-                headers: {
-                    'Authorization': `token ${GITHUB_CONFIG.token}`,
-                    'Accept': 'application/vnd.github.v3+json',
-                    'Content-Type': 'application/json'
-                }
-            };
-            
-            const response = await fetch(fullUrl, { ...defaultOptions, ...options });
-            
-            if (!response.ok) {
-                throw new Error(`GitHub API error: ${response.status} ${response.statusText}`);
-            }
-            
-            return response.json();
-        }
+        console.log('Sending update request with body:', body);
+        const result = await githubApiRequest(url, {
+            method: 'PUT',
+            body: JSON.stringify(body)
+        });
+        
+        console.log('File update successful:', result);
+        return result;
+    } catch (error) {
+        console.error('Error updating file:', filePath, error);
+        throw error;
+    }
+}
 
-        async function getFileContent(filePath) {
-            try {
-                const url = `/repos/${GITHUB_CONFIG.username}/${GITHUB_CONFIG.repo}/contents/${filePath}`;
-                const fileData = await githubApiRequest(url);
-                
-                // File content is base64 encoded
-                const content = atob(fileData.content);
-                return JSON.parse(content);
-            } catch (error) {
-                // If file doesn't exist, return empty array
-                if (error.message.includes('404')) {
-                    return [];
-                }
-                throw error;
-            }
-        }
+async function loadData() {
+    try {
+        console.log('Starting data load from GitHub...');
+        console.log('Config being used:', {
+            username: GITHUB_CONFIG.username,
+            repo: GITHUB_CONFIG.repo,
+            branch: GITHUB_CONFIG.branch,
+            token: GITHUB_CONFIG.token ? '***' + GITHUB_CONFIG.token.slice(-4) : 'MISSING'
+        });
 
-        async function updateFile(filePath, content, commitMessage) {
-            // First, get the current file to get its SHA (needed for update)
-            let sha = null;
-            try {
-                const url = `/repos/${GITHUB_CONFIG.username}/${GITHUB_CONFIG.repo}/contents/${filePath}`;
-                const currentFile = await githubApiRequest(url);
-                sha = currentFile.sha;
-            } catch (error) {
-                // File doesn't exist yet, that's fine - we'll create it
-            }
+        [ladderData, pendingRequests] = await Promise.all([
+            getFileContent(DATA_FILES.ladder),
+            getFileContent(DATA_FILES.pending)
+        ]);
+        
+        console.log('Data loaded successfully:', { ladderData, pendingRequests });
+    } catch (error) {
+        console.error('Error loading data from GitHub:', error);
+        throw error;
+    }
+}
 
-            const url = `/repos/${GITHUB_CONFIG.username}/${GITHUB_CONFIG.repo}/contents/${filePath}`;
-            const body = {
-                message: commitMessage,
-                content: btoa(JSON.stringify(content, null, 2)),
-                branch: GITHUB_CONFIG.branch
-            };
+async function saveData() {
+    try {
+        console.log('Starting data save to GitHub...');
+        await Promise.all([
+            updateFile(DATA_FILES.ladder, ladderData, 'Update ladder data'),
+            updateFile(DATA_FILES.pending, pendingRequests, 'Update pending requests')
+        ]);
+        console.log('Data saved successfully');
+        return true;
+    } catch (error) {
+        console.error('Error saving data to GitHub:', error);
+        showStatus('Error saving data: ' + error.message, 'error');
+        return false;
+    }
+}
 
-            if (sha) {
-                body.sha = sha;
-            }
-
-            return githubApiRequest(url, {
-                method: 'PUT',
-                body: JSON.stringify(body)
-            });
-        }
-
-        async function loadData() {
-            try {
-                [ladderData, pendingRequests] = await Promise.all([
-                    getFileContent(DATA_FILES.ladder),
-                    getFileContent(DATA_FILES.pending)
-                ]);
-            } catch (error) {
-                console.error('Error loading data from GitHub:', error);
-                throw error;
-            }
-        }
-
-        async function saveData() {
-            try {
-                await Promise.all([
-                    updateFile(DATA_FILES.ladder, ladderData, 'Update ladder data'),
-                    updateFile(DATA_FILES.pending, pendingRequests, 'Update pending requests')
-                ]);
-                return true;
-            } catch (error) {
-                console.error('Error saving data to GitHub:', error);
-                showStatus('Error saving data to GitHub', 'error');
-                return false;
-            }
-        }
 
         // Load sample data if GitHub fails
         function loadSampleData() {
