@@ -1,2 +1,42 @@
-[]
-
+[
+  {
+    "id": 1,
+    "firstName": "John",
+    "lastName": "Smith",
+    "position": 1,
+    "wins": 5,
+    "losses": 1
+  },
+  {
+    "id": 2,
+    "firstName": "Sarah",
+    "lastName": "Johnson",
+    "position": 2,
+    "wins": 4,
+    "losses": 2
+  },
+  {
+    "id": 3,
+    "firstName": "Michael",
+    "lastName": "Williams",
+    "position": 3,
+    "wins": 3,
+    "losses": 3
+  },
+  {
+    "id": 4,
+    "firstName": "Emily",
+    "lastName": "Brown",
+    "position": 4,
+    "wins": 2,
+    "losses": 4
+  },
+  {
+    "id": 5,
+    "firstName": "David",
+    "lastName": "Jones",
+    "position": 5,
+    "wins": 1,
+    "losses": 5
+  }
+]
