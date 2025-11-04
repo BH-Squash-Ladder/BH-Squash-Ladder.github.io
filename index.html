@@ -306,7 +306,27 @@
             opacity: 0.7;
             pointer-events: none;
         }
+.download-buttons {
+    margin-top: 20px;
+    background: var(--bg-tertiary);
+}
 
+.download-buttons h3 {
+    color: var(--accent);
+    margin-bottom: 10px;
+}
+
+.download-buttons p {
+    margin-bottom: 15px;
+    color: var(--text-secondary);
+}
+
+.download-buttons code {
+    background: var(--bg-primary);
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-family: monospace;
+}
         @media (max-width: 767px) {
             .ladder-table {
                 font-size: 0.9rem;
@@ -431,162 +451,172 @@
     </div>
 
     <script>
-        // Configuration for GitHub Pages
-        const GITHUB_CONFIG = {
-            username: 'BH-Squash-Ladder',
-            repo: 'BH-Squash-Ladder.github.io',
-            token: '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',
-            branch: 'main'
-        };
+     // Configuration for GitHub Pages
+const GITHUB_CONFIG = {
+    username: 'BH-Squash-Ladder',
+    repo: 'BH-Squash-Ladder.github.io'
+};
 
-        // File paths - these will be hosted via GitHub Pages
-        const DATA_URLS = {
-            ladder: 'https://bh-squash-ladder.github.io/data/ladder.json',
-            pending: 'https://bh-squash-ladder.github.io/data/pending.json'
-        };
+// File paths - these will be hosted via GitHub Pages
+const DATA_URLS = {
+    ladder: 'https://bh-squash-ladder.github.io/data/ladder.json',
+    pending: 'https://bh-squash-ladder.github.io/data/pending.json'
+};
 
-        let ladderData = [];
-        let pendingRequests = [];
-        let isAdmin = false;
-        const adminPassword = "admin123";
+let ladderData = [];
+let pendingRequests = [];
+let isAdmin = false;
+const adminPassword = "admin123";
 
-        // DOM Elements
-        const ladderBody = document.getElementById('ladderBody');
-        const joinForm = document.getElementById('joinForm');
-        const challengeForm = document.getElementById('challengeForm');
-        const challengerSelect = document.getElementById('challenger');
-        const opponentSelect = document.getElementById('opponent');
-        const statusMessage = document.getElementById('statusMessage');
-        const loginBtn = document.getElementById('loginBtn');
-        const loginModal = document.getElementById('loginModal');
-        const cancelLogin = document.getElementById('cancelLogin');
-        const confirmLogin = document.getElementById('confirmLogin');
-        const adminPanel = document.getElementById('adminPanel');
-        const pendingRequestsContainer = document.getElementById('pendingRequests');
+// DOM Elements
+const ladderBody = document.getElementById('ladderBody');
+const joinForm = document.getElementById('joinForm');
+const challengeForm = document.getElementById('challengeForm');
+const challengerSelect = document.getElementById('challenger');
+const opponentSelect = document.getElementById('opponent');
+const statusMessage = document.getElementById('statusMessage');
+const loginBtn = document.getElementById('loginBtn');
+const loginModal = document.getElementById('loginModal');
+const cancelLogin = document.getElementById('cancelLogin');
+const confirmLogin = document.getElementById('confirmLogin');
+const adminPanel = document.getElementById('adminPanel');
+const pendingRequestsContainer = document.getElementById('pendingRequests');
 
-        // Initialize the application
-        async function init() {
-            showStatus('Loading data...', 'success');
-            
-            try {
-                await loadData();
-                renderLadder();
-                updatePlayerSelects();
-                showStatus('Data loaded successfully', 'success');
-            } catch (error) {
-                console.error('Error loading data:', error);
-                showStatus('Error loading data. Using sample data.', 'error');
-                // Load sample data if GitHub loading fails
-                loadSampleData();
-                renderLadder();
-                updatePlayerSelects();
-            }
-            
-            // Event listeners
-            joinForm.addEventListener('submit', handleJoinRequest);
-            challengeForm.addEventListener('submit', handleChallenge);
-            loginBtn.addEventListener('click', showLoginModal);
-            cancelLogin.addEventListener('click', hideLoginModal);
-            confirmLogin.addEventListener('click', handleLogin);
-            challengerSelect.addEventListener('change', updateOpponentOptions);
+// Initialize the application
+async function init() {
+    showStatus('Loading data...', 'success');
+    
+    try {
+        await loadData();
+        renderLadder();
+        updatePlayerSelects();
+        showStatus('Data loaded successfully', 'success');
+    } catch (error) {
+        console.error('Error loading data:', error);
+        showStatus('Error loading data. Using local data.', 'error');
+        loadLocalData();
+        renderLadder();
+        updatePlayerSelects();
+    }
+    
+    // Event listeners
+    joinForm.addEventListener('submit', handleJoinRequest);
+    challengeForm.addEventListener('submit', handleChallenge);
+    loginBtn.addEventListener('click', showLoginModal);
+    cancelLogin.addEventListener('click', hideLoginModal);
+    confirmLogin.addEventListener('click', handleLogin);
+    challengerSelect.addEventListener('change', updateOpponentOptions);
+}
+
+// Load data from GitHub Pages
+async function loadData() {
+    try {
+        console.log('Loading data from GitHub Pages...');
+        
+        const [ladderResponse, pendingResponse] = await Promise.all([
+            fetch(DATA_URLS.ladder + '?t=' + Date.now()),
+            fetch(DATA_URLS.pending + '?t=' + Date.now())
+        ]);
+
+        if (!ladderResponse.ok) throw new Error(`Ladder data: ${ladderResponse.status}`);
+        if (!pendingResponse.ok) throw new Error(`Pending data: ${pendingResponse.status}`);
+
+        ladderData = await ladderResponse.json();
+        pendingRequests = await pendingResponse.json();
+
+        console.log('Data loaded successfully:', { ladderData, pendingRequests });
+        
+        // Save to localStorage as backup
+        localStorage.setItem('squashLadderData', JSON.stringify(ladderData));
+        localStorage.setItem('squashLadderPending', JSON.stringify(pendingRequests));
+    } catch (error) {
+        console.error('Error loading data from GitHub Pages:', error);
+        throw error;
+    }
+}
+
+// Save data - this will only save locally since GitHub Pages is read-only
+function saveData() {
+    try {
+        // Store in localStorage
+        localStorage.setItem('squashLadderData', JSON.stringify(ladderData));
+        localStorage.setItem('squashLadderPending', JSON.stringify(pendingRequests));
+        
+        console.log('Data saved to localStorage');
+        
+        // For GitHub Pages, we can't write directly, so we'll show instructions
+        if (isAdmin) {
+            showStatus('Changes saved locally. To update the main ladder, download the JSON files and manually update the repository.', 'success');
+            showDownloadButtons();
         }
+        
+        return true;
+    } catch (error) {
+        console.error('Error saving data:', error);
+        showStatus('Error saving data', 'error');
+        return false;
+    }
+}
 
-        // Load data from GitHub Pages
-        async function loadData() {
-            try {
-                console.log('Loading data from GitHub Pages...');
-                
-                const [ladderResponse, pendingResponse] = await Promise.all([
-                    fetch(DATA_URLS.ladder + '?t=' + Date.now()), // Cache bust
-                    fetch(DATA_URLS.pending + '?t=' + Date.now())
-                ]);
+// Show download buttons for admin to manually update GitHub
+function showDownloadButtons() {
+    // Remove existing download buttons if any
+    const existingButtons = document.querySelectorAll('.download-buttons');
+    existingButtons.forEach(btn => btn.remove());
+    
+    const downloadSection = document.createElement('div');
+    downloadSection.className = 'download-buttons card';
+    downloadSection.innerHTML = `
+        <h3>Update Main Ladder</h3>
+        <p>Download these files and update them in your GitHub repository:</p>
+        <div class="request-actions">
+            <button class="btn btn-secondary" onclick="downloadFile('ladder.json', ladderData)">Download Ladder Data</button>
+            <button class="btn btn-secondary" onclick="downloadFile('pending.json', pendingRequests)">Download Pending Data</button>
+        </div>
+        <p><small>Replace the files in the <code>data/</code> folder in your repository with these downloaded files.</small></p>
+    `;
+    
+    adminPanel.appendChild(downloadSection);
+}
 
-                if (!ladderResponse.ok) throw new Error(`Ladder data: ${ladderResponse.status}`);
-                if (!pendingResponse.ok) throw new Error(`Pending data: ${pendingResponse.status}`);
+// Download JSON file
+function downloadFile(filename, data) {
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
 
-                ladderData = await ladderResponse.json();
-                pendingRequests = await pendingResponse.json();
-
-                console.log('Data loaded successfully:', { ladderData, pendingRequests });
-            } catch (error) {
-                console.error('Error loading data from GitHub Pages:', error);
-                throw error;
-            }
-        }
-
-        // Save data using GitHub API
-        async function saveData() {
-            try {
-                // Store in localStorage as backup
-                localStorage.setItem('squashLadderData', JSON.stringify(ladderData));
-                localStorage.setItem('squashLadderPending', JSON.stringify(pendingRequests));
-                
-                // Try to update via GitHub API if we have a token
-                if (GITHUB_CONFIG.token && GITHUB_CONFIG.token !== 'YOUR_GITHUB_TOKEN') {
-                    await updateDataViaGitHub();
-                }
-                
-                return true;
-            } catch (error) {
-                console.error('Error saving data:', error);
-                showStatus('Changes saved locally. GitHub update may have failed.', 'error');
-                return true; // Still return true as local save worked
-            }
-        }
-
-        // Update data via GitHub API
-        async function updateDataViaGitHub() {
-            const updateData = {
-                ladder: ladderData,
-                pending: pendingRequests,
-                timestamp: new Date().toISOString()
-            };
-            
-            // Create a GitHub issue with the update data
-            const response = await fetch(`https://api.github.com/repos/${GITHUB_CONFIG.username}/${GITHUB_CONFIG.repo}/issues`, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `token ${GITHUB_CONFIG.token}`,
-                    'Accept': 'application/vnd.github.v3+json',
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    title: `Ladder Update - ${new Date().toLocaleString()}`,
-                    body: `Please update the ladder data:\n\n\`\`\`json\n${JSON.stringify(updateData, null, 2)}\n\`\`\``,
-                    labels: ['ladder-update']
-                })
-            });
-            
-            if (!response.ok) {
-                throw new Error(`GitHub API error: ${response.status}`);
-            }
-            
-            console.log('Update request sent to GitHub');
-        }
-
-        // Load sample data if GitHub fails
-        function loadSampleData() {
-            // Try to load from localStorage first
-            const savedData = localStorage.getItem('squashLadderData');
-            const savedPending = localStorage.getItem('squashLadderPending');
-            
-            if (savedData && savedPending) {
-                ladderData = JSON.parse(savedData);
-                pendingRequests = JSON.parse(savedPending);
-                console.log('Loaded data from localStorage');
-            } else {
-                // Default sample data
-                ladderData = [
-                    { id: 1, firstName: "John", lastName: "Smith", position: 1, wins: 5, losses: 1 },
-                    { id: 2, firstName: "Sarah", lastName: "Johnson", position: 2, wins: 4, losses: 2 },
-                    { id: 3, firstName: "Michael", lastName: "Williams", position: 3, wins: 3, losses: 3 },
-                    { id: 4, firstName: "Emily", lastName: "Brown", position: 4, wins: 2, losses: 4 },
-                    { id: 5, firstName: "David", lastName: "Jones", position: 5, wins: 1, losses: 5 }
-                ];
-                pendingRequests = [];
-                console.log('Loaded default sample data');
-            }
-        }
+// Load data from localStorage
+function loadLocalData() {
+    const savedData = localStorage.getItem('squashLadderData');
+    const savedPending = localStorage.getItem('squashLadderPending');
+    
+    if (savedData && savedPending) {
+        ladderData = JSON.parse(savedData);
+        pendingRequests = JSON.parse(savedPending);
+        console.log('Loaded data from localStorage');
+    } else {
+        // Default sample data
+        ladderData = [
+            { id: 1, firstName: "John", lastName: "Smith", position: 1, wins: 5, losses: 1 },
+            { id: 2, firstName: "Sarah", lastName: "Johnson", position: 2, wins: 4, losses: 2 },
+            { id: 3, firstName: "Michael", lastName: "Williams", position: 3, wins: 3, losses: 3 },
+            { id: 4, firstName: "Emily", lastName: "Brown", position: 4, wins: 2, losses: 4 },
+            { id: 5, firstName: "David", lastName: "Jones", position: 5, wins: 1, losses: 5 }
+        ];
+        pendingRequests = [];
+        console.log('Loaded default sample data');
+        
+        // Save the default data
+        saveData();
+    }
+}
 
         // Render the ladder table
         function renderLadder() {
@@ -837,90 +867,93 @@
             });
         }
 
-        // Approve a request - CORRECTED LADDER LOGIC
-        async function approveRequest(requestId) {
-            const requestIndex = pendingRequests.findIndex(r => r.id === requestId);
-            if (requestIndex === -1) return;
+       // Approve a request - CORRECTED LADDER LOGIC
+async function approveRequest(requestId) {
+    const requestIndex = pendingRequests.findIndex(r => r.id === requestId);
+    if (requestIndex === -1) return;
+    
+    const request = pendingRequests[requestIndex];
+    
+    if (request.type === 'join') {
+        // Add new player to the bottom of the ladder
+        const newPlayer = {
+            id: Date.now(),
+            firstName: request.firstName,
+            lastName: request.lastName,
+            position: ladderData.length + 1,
+            wins: 0,
+            losses: 0
+        };
+        
+        ladderData.push(newPlayer);
+        console.log(`Added new player: ${request.firstName} ${request.lastName} at position ${newPlayer.position}`);
+        
+    } else if (request.type === 'challenge' && request.result === 'win') {
+        // Handle challenge win - CORRECTED LOGIC
+        const challenger = ladderData.find(p => p.id === request.challengerId);
+        const opponent = ladderData.find(p => p.id === request.opponentId);
+        
+        // Only update if challenger is below opponent (which should always be true for valid challenges)
+        if (challenger.position > opponent.position) {
+            const opponentPosition = opponent.position;
+            const challengerPosition = challenger.position;
             
-            const request = pendingRequests[requestIndex];
+            console.log(`Before: Challenger at ${challengerPosition}, Opponent at ${opponentPosition}`);
             
-            if (request.type === 'join') {
-                // Add new player to the bottom of the ladder
-                const newPlayer = {
-                    id: Date.now(),
-                    firstName: request.firstName,
-                    lastName: request.lastName,
-                    position: ladderData.length + 1,
-                    wins: 0,
-                    losses: 0
-                };
-                
-                ladderData.push(newPlayer);
-            } else if (request.type === 'challenge' && request.result === 'win') {
-                // Handle challenge win - CORRECTED LOGIC
-                const challenger = ladderData.find(p => p.id === request.challengerId);
-                const opponent = ladderData.find(p => p.id === request.opponentId);
-                
-                // Only update if challenger is below opponent (which should always be true for valid challenges)
-                if (challenger.position > opponent.position) {
-                    const opponentPosition = opponent.position;
-                    const challengerPosition = challenger.position;
-                    
-                    console.log(`Before: Challenger at ${challengerPosition}, Opponent at ${opponentPosition}`);
-                    
-                    // Move the challenger up to the opponent's position
-                    challenger.position = opponentPosition;
-                    
-                    // Move the opponent and all players between them down one position
-                    ladderData.forEach(player => {
-                        if (player.position >= opponentPosition && player.position < challengerPosition && player.id !== challenger.id) {
-                            player.position += 1;
-                            console.log(`Moving ${player.firstName} from ${player.position - 1} to ${player.position}`);
-                        }
-                    });
-                    
-                    // Update wins/losses
-                    challenger.wins += 1;
-                    opponent.losses += 1;
-                    
-                    console.log(`After: Challenger at ${challenger.position}, Opponent at ${opponent.position}`);
+            // Move the challenger up to the opponent's position
+            challenger.position = opponentPosition;
+            
+            // Move the opponent and all players between them down one position
+            ladderData.forEach(player => {
+                if (player.position >= opponentPosition && player.position < challengerPosition && player.id !== challenger.id) {
+                    player.position += 1;
+                    console.log(`Moving ${player.firstName} from ${player.position - 1} to ${player.position}`);
                 }
-            } else if (request.type === 'challenge' && request.result === 'loss') {
-                // Handle challenge loss - just update stats
-                const challenger = ladderData.find(p => p.id === request.challengerId);
-                const opponent = ladderData.find(p => p.id === request.opponentId);
-                
-                challenger.losses += 1;
-                opponent.wins += 1;
-            }
+            });
             
-            // Remove the request
-            pendingRequests.splice(requestIndex, 1);
+            // Update wins/losses
+            challenger.wins += 1;
+            opponent.losses += 1;
             
-            // Update UI and storage
-            renderLadder();
-            updatePlayerSelects();
-            const saved = await saveData();
-            
-            if (saved) {
-                renderPendingRequests();
-                showStatus('Request approved', 'success');
-            }
+            console.log(`After: Challenger at ${challenger.position}, Opponent at ${opponent.position}`);
         }
+    } else if (request.type === 'challenge' && request.result === 'loss') {
+        // Handle challenge loss - just update stats
+        const challenger = ladderData.find(p => p.id === request.challengerId);
+        const opponent = ladderData.find(p => p.id === request.opponentId);
+        
+        challenger.losses += 1;
+        opponent.wins += 1;
+    }
+    
+    // Remove the request
+    pendingRequests.splice(requestIndex, 1);
+    
+    // Update UI and storage
+    renderLadder();
+    updatePlayerSelects();
+    const saved = saveData(); // This now saves to localStorage
+    
+    if (saved) {
+        renderPendingRequests();
+        showStatus('Request approved and saved locally', 'success');
+    }
+}
 
-        // Reject a request
-        async function rejectRequest(requestId) {
-            const requestIndex = pendingRequests.findIndex(r => r.id === requestId);
-            if (requestIndex === -1) return;
-            
-            pendingRequests.splice(requestIndex, 1);
-            const saved = await saveData();
-            
-            if (saved) {
-                renderPendingRequests();
-                showStatus('Request rejected', 'success');
-            }
-        }
+// Reject a request
+async function rejectRequest(requestId) {
+    const requestIndex = pendingRequests.findIndex(r => r.id === requestId);
+    if (requestIndex === -1) return;
+    
+    pendingRequests.splice(requestIndex, 1);
+    const saved = saveData();
+    
+    if (saved) {
+        renderPendingRequests();
+        showStatus('Request rejected and changes saved locally', 'success');
+    }
+}
+
 
         // Show status message
         function showStatus(message, type) {
